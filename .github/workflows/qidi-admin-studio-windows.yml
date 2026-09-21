@@ -1,0 +1,36 @@
+name: Qidi Admin Studio — Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_deps_only:
+        description: Build or refresh the Windows dependency cache only
+        required: false
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'resources/profiles/Qidi/**'
+      - 'resources/profiles/Qidi.json'
+      - 'qidi_admin/**'
+      - 'version.inc'
+      - 'CMakeLists.txt'
+      - 'build_win.bat'
+      - '.github/workflows/qidi-admin-studio-windows.yml'
+
+concurrency:
+  group: qidi-admin-studio-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows_x64:
+    name: Qidi Admin Studio x64
+    uses: ./.github/workflows/build_check_cache.yml
+    with:
+      os: windows-latest
+      arch: x64
+      compiler: clang
+      build-deps-only: ${{ inputs.build_deps_only || false }}
+    secrets: inherit
