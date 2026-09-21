@@ -1,0 +1,106 @@
+#include "QidiAdminGateway.hpp"
+
+#include <algorithm>
+#include <cctype>
+#include <memory>
+#include <utility>
+
+namespace Slic3r::GUI {
+namespace {
+
+bool has_control_character(const std::string& value)
+{
+    return std::any_of(value.begin(), value.end(), [](unsigned char c) { return c < 0x20 || c == 0x7f; });
+}
+
+std::string trim_copy(std::string value)
+{
+    const auto first = std::find_if_not(value.begin(), value.end(), [](unsigned char c) { return std::isspace(c); });
+    const auto last  = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char c) { return std::isspace(c); }).base();
+    return first < last ? std::string(first, last) : std::string();
+}
+
+} // namespace
+
+bool QidiAdminGateway::is_valid_endpoint(const std::string& endpoint)
+{
+    const std::string value = trim_copy(endpoint);
+    if (value.empty() || has_control_character(value))
+        return false;
+
+    const size_t scheme_end = value.find("://");
+    if (scheme_end == std::string::npos)
+        return false;
+    const std::string scheme = value.substr(0, scheme_end);
+    if (scheme != "http" && scheme != "https")
+        return false;
+
+    const size_t authority_begin = scheme_end + 3;
+    const size_t authority_end = value.find_first_of("/?#", authority_begin);
+    const std::string authority = value.substr(authority_begin, authority_end - authority_begin);
+    // Credentials in a server URL are too easy to leak through diagnostics.
+    return !authority.empty() && authority.find('@') == std::string::npos;
+}
+
+std::string QidiAdminGateway::normalized_endpoint(const std::string& endpoint)
+{
+    std::string normalized = trim_copy(endpoint);
+    while (!normalized.empty() && normalized.back() == '/')
+        normalized.pop_back();
+    return normalized;
+}
+
+Http::Ptr QidiAdminGateway::fetch_status(const QidiAdminConnection& connection, ResultCallback callback)
+{
+    return request(connection, "/api/v1/status", nullptr, std::move(callback));
+}
+
+Http::Ptr QidiAdminGateway::preflight(const QidiAdminConnection& connection,
+                                      const std::string& filename,
+                                      const std::string& printer_id,
+                                      ResultCallback callback)
+{
+    if (filename.empty()) {
+        callback({false, 0, {}, "A file must be uploaded before Qidi Admin preflight."});
+        return nullptr;
+    }
+    const std::string path = "/api/v1/printer/preflight?filename=" + Http::url_encode(filename) +
+                             "&printer_id=" + Http::url_encode(printer_id.empty() ? "q2" : printer_id);
+    return request(connection, path, nullptr, std::move(callback));
+}
+
+Http::Ptr QidiAdminGateway::request(const QidiAdminConnection& connection,
+                                    const std::string& path,
+                                    const std::string* json_body,
+                                    ResultCallback callback)
+{
+    if (!is_valid_endpoint(connection.endpoint)) {
+        callback({false, 0, {}, "Qidi Admin Server URL must begin with http:// or https:// and contain a host."});
+        return nullptr;
+    }
+    if (connection.api_key.empty()) {
+        callback({false, 0, {}, "Qidi Admin Server API key is empty."});
+        return nullptr;
+    }
+
+    const std::string url = normalized_endpoint(connection.endpoint) + path;
+    auto callback_holder = std::make_shared<ResultCallback>(std::move(callback));
+    Http request = json_body ? Http::post(url) : Http::get(url);
+    request.timeout_connect(5)
+           .timeout_max(20)
+           .tls_verify(connection.verify_tls)
+           .header("X-Api-Key", connection.api_key)
+           .header("Accept", "application/json");
+    if (json_body != nullptr)
+        request.header("Content-Type", "application/json").set_post_body(*json_body);
+
+    return request.on_complete([callback_holder](std::string body, unsigned status) {
+                      (*callback_holder)({status >= 200 && status < 300, status, std::move(body), {}});
+                  })
+                  .on_error([callback_holder](std::string body, std::string error, unsigned status) {
+                      (*callback_holder)({false, status, std::move(body), std::move(error)});
+                  })
+                  .perform();
+}
+
+} // namespace Slic3r::GUI
