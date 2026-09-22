@@ -57,7 +57,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     form->Add(m_endpoint, 1, wxEXPAND);
     form->Add(new wxStaticText(content, wxID_ANY, _L("API key")), 0, wxALIGN_CENTER_VERTICAL);
     m_api_key = new wxTextCtrl(content, wxID_ANY, wx_from_utf8(QidiAdminCredentials::load_api_key()), wxDefaultPosition, wxDefaultSize, wxTE_PASSWORD);
-    m_api_key->SetHint(_L("Stored in Windows Credential Manager"));
+    m_api_key->SetHint(_L("Optional — stored in Windows Credential Manager"));
     form->Add(m_api_key, 1, wxEXPAND);
     layout->Add(form, 1, wxLEFT | wxRIGHT | wxEXPAND, FromDIP(16));
 
@@ -199,7 +199,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         // form is still empty. This dialog is also used as the first-run
         // setup surface.
         const QidiAdminConnection value = connection();
-        if (!QidiAdminGateway::is_valid_endpoint(value.endpoint) || value.api_key.empty())
+        if (!QidiAdminGateway::is_valid_endpoint(value.endpoint))
             return;
         refresh_camera();
         if (++m_refresh_ticks % 8 == 0)
@@ -225,7 +225,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     }, m_camera_timer.GetId());
     m_camera_timer.Start(250);
     const QidiAdminConnection saved_connection = connection();
-    if (QidiAdminGateway::is_valid_endpoint(saved_connection.endpoint) && !saved_connection.api_key.empty()) {
+    if (QidiAdminGateway::is_valid_endpoint(saved_connection.endpoint)) {
         refresh_status();
         refresh_materials();
         refresh_macros();

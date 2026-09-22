@@ -63,15 +63,12 @@ Http::Ptr QidiAdminGateway::fetch_camera_snapshot(const QidiAdminConnection& con
         callback({false, 0, {}, "Qidi Admin Server URL must begin with http:// or https:// and contain a host."});
         return nullptr;
     }
-    if (connection.api_key.empty()) {
-        callback({false, 0, {}, "Qidi Admin Server API key is empty."});
-        return nullptr;
-    }
     auto callback_holder = std::make_shared<ResultCallback>(std::move(callback));
     Http request = Http::get(normalized_endpoint(connection.endpoint) + "/api/v1/camera/snapshot");
-    request.timeout_connect(5).timeout_max(10).tls_verify(connection.verify_tls)
-        .header("X-Api-Key", connection.api_key)
-        .header("Accept", "image/jpeg")
+    request.timeout_connect(5).timeout_max(10).tls_verify(connection.verify_tls);
+    if (!connection.api_key.empty())
+        request.header("X-Api-Key", connection.api_key);
+    request.header("Accept", "image/jpeg")
         .on_complete([callback_holder](std::string body, unsigned status) {
             (*callback_holder)({status >= 200 && status < 300, status, std::move(body), {}});
         })
@@ -87,11 +84,6 @@ Http::Ptr QidiAdminGateway::fetch_camera_stream_frame(const QidiAdminConnection&
         callback({false, 0, {}, "Qidi Admin Server URL must begin with http:// or https:// and contain a host."});
         return nullptr;
     }
-    if (connection.api_key.empty()) {
-        callback({false, 0, {}, "Qidi Admin Server API key is empty."});
-        return nullptr;
-    }
-
     // Http owns the curl worker. A shared state guarantees that cancelling the
     // multipart request after a completed frame cannot later report a second
     // (spurious) cancellation error to the UI.
@@ -101,9 +93,10 @@ Http::Ptr QidiAdminGateway::fetch_camera_stream_frame(const QidiAdminConnection&
     auto state = std::make_shared<FrameState>();
     auto callback_holder = std::make_shared<ResultCallback>(std::move(callback));
     Http request = Http::get(normalized_endpoint(connection.endpoint) + "/api/v1/camera/stream");
-    request.timeout_connect(5).timeout_max(12).size_limit(8 * 1024 * 1024).tls_verify(connection.verify_tls)
-        .header("X-Api-Key", connection.api_key)
-        .header("Accept", "multipart/x-mixed-replace, image/jpeg")
+    request.timeout_connect(5).timeout_max(12).size_limit(8 * 1024 * 1024).tls_verify(connection.verify_tls);
+    if (!connection.api_key.empty())
+        request.header("X-Api-Key", connection.api_key);
+    request.header("Accept", "multipart/x-mixed-replace, image/jpeg")
         .on_progress([state, callback_holder](Http::Progress progress, bool& cancel) {
             const std::string& buffer = progress.buffer;
             const size_t jpeg_start = buffer.rfind("\xFF\xD8");
@@ -180,15 +173,16 @@ Http::Ptr QidiAdminGateway::cancel_queued_command(const QidiAdminConnection& con
         callback({false, 0, {}, "Select a queued command first."});
         return nullptr;
     }
-    if (!is_valid_endpoint(connection.endpoint) || connection.api_key.empty()) {
+    if (!is_valid_endpoint(connection.endpoint)) {
         callback({false, 0, {}, "Qidi Admin Server connection settings are incomplete."});
         return nullptr;
     }
     auto callback_holder = std::make_shared<ResultCallback>(std::move(callback));
     Http request = Http::del(normalized_endpoint(connection.endpoint) + "/api/v1/command-queue/" + std::to_string(command_id));
-    request.timeout_connect(5).timeout_max(15).tls_verify(connection.verify_tls)
-        .header("X-Api-Key", connection.api_key)
-        .header("Accept", "application/json")
+    request.timeout_connect(5).timeout_max(15).tls_verify(connection.verify_tls);
+    if (!connection.api_key.empty())
+        request.header("X-Api-Key", connection.api_key);
+    request.header("Accept", "application/json")
         .on_complete([callback_holder](std::string body, unsigned status) {
             (*callback_holder)({status >= 200 && status < 300, status, std::move(body), {}});
         })
@@ -204,15 +198,16 @@ Http::Ptr QidiAdminGateway::retry_queued_command(const QidiAdminConnection& conn
         callback({false, 0, {}, "Select a command first."});
         return nullptr;
     }
-    if (!is_valid_endpoint(connection.endpoint) || connection.api_key.empty()) {
+    if (!is_valid_endpoint(connection.endpoint)) {
         callback({false, 0, {}, "Qidi Admin Server connection settings are incomplete."});
         return nullptr;
     }
     auto callback_holder = std::make_shared<ResultCallback>(std::move(callback));
     Http request = Http::post(normalized_endpoint(connection.endpoint) + "/api/v1/command-queue/" + std::to_string(command_id) + "/retry");
-    request.timeout_connect(5).timeout_max(15).tls_verify(connection.verify_tls)
-        .header("X-Api-Key", connection.api_key)
-        .header("Accept", "application/json")
+    request.timeout_connect(5).timeout_max(15).tls_verify(connection.verify_tls);
+    if (!connection.api_key.empty())
+        request.header("X-Api-Key", connection.api_key);
+    request.header("Accept", "application/json")
         .header("Content-Type", "application/json")
         .set_post_body(std::string("{}"))
         .on_complete([callback_holder](std::string body, unsigned status) {
@@ -267,19 +262,15 @@ Http::Ptr QidiAdminGateway::request(const QidiAdminConnection& connection,
         callback({false, 0, {}, "Qidi Admin Server URL must begin with http:// or https:// and contain a host."});
         return nullptr;
     }
-    if (connection.api_key.empty()) {
-        callback({false, 0, {}, "Qidi Admin Server API key is empty."});
-        return nullptr;
-    }
-
     const std::string url = normalized_endpoint(connection.endpoint) + path;
     auto callback_holder = std::make_shared<ResultCallback>(std::move(callback));
     Http request = json_body ? Http::post(url) : Http::get(url);
     request.timeout_connect(5)
            .timeout_max(20)
-           .tls_verify(connection.verify_tls)
-           .header("X-Api-Key", connection.api_key)
-           .header("Accept", "application/json");
+           .tls_verify(connection.verify_tls);
+    if (!connection.api_key.empty())
+        request.header("X-Api-Key", connection.api_key);
+    request.header("Accept", "application/json");
     if (json_body != nullptr)
         request.header("Content-Type", "application/json").set_post_body(*json_body);
 
