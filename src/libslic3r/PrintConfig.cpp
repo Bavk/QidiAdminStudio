@@ -163,7 +163,8 @@ static t_config_enum_values s_keys_map_PrintHostType {
     { "simplyprint",    htSimplyPrint },
     { "elegoolink",     htElegooLink },
     { "3dprinteros",    ht3DPrinterOS },
-    { "moonraker",      htMoonraker }
+    { "moonraker",      htMoonraker },
+    { "qidiadmin",      htQidiAdmin }
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(PrintHostType)
 
@@ -5415,6 +5416,7 @@ void PrintConfigDef::init_fff_params()
     def->enum_values.push_back("elegoolink");
     def->enum_values.push_back("3dprinteros");
     def->enum_values.push_back("moonraker");
+    def->enum_values.push_back("qidiadmin");
     def->enum_labels.push_back("PrusaLink");
     def->enum_labels.push_back("PrusaConnect");
     def->enum_labels.push_back("Octo/Klipper");
@@ -5432,6 +5434,7 @@ void PrintConfigDef::init_fff_params()
     def->enum_labels.push_back("Elegoo Link");
     def->enum_labels.push_back("3DPrinterOS");
     def->enum_labels.push_back("Moonraker (Klipper)");
+    def->enum_labels.push_back("Qidi Admin Server (Raspberry)");
     def->mode = comAdvanced;
     def->cli = ConfigOptionDef::nocli;
     def->set_default_value(new ConfigOptionEnum<PrintHostType>(htOctoPrint));
