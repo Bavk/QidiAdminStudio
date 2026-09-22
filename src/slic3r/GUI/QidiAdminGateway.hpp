@@ -61,6 +61,9 @@ public:
                                      int priority,
                                      const std::string& queue_group,
                                      ResultCallback callback);
+    static Http::Ptr simulate_command(const QidiAdminConnection& connection,
+                                      const std::string& script,
+                                      ResultCallback callback);
 
 private:
     static Http::Ptr request(const QidiAdminConnection& connection,

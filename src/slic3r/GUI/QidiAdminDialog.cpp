@@ -106,6 +106,10 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_command_log = new wxListBox(content, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(480, 76)));
     m_command_log->Append(_L("Loading command log…"));
     layout->Add(m_command_log, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
+    m_command_response = new wxTextCtrl(content, wxID_ANY, wxEmptyString,
+        wxDefaultPosition, FromDIP(wxSize(480, 66)), wxTE_MULTILINE | wxTE_READONLY);
+    m_command_response->SetHint(_L("Select a command to view the Raspberry/Moonraker response."));
+    layout->Add(m_command_response, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
     auto* macro_row = new wxBoxSizer(wxHORIZONTAL);
     m_macro_choice = new wxChoice(content, wxID_ANY);
@@ -138,6 +142,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_command->SetHint("SET_PIN PIN=caselight VALUE=1");
     layout->Add(m_command, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
     m_send_command = new wxButton(content, wxID_ANY, _L("Queue G-code"));
+    m_simulate_command = new wxButton(content, wxID_ANY, _L("Review G-code"));
     auto* command_actions = new wxBoxSizer(wxHORIZONTAL);
     command_actions->Add(new wxStaticText(content, wxID_ANY, _L("Priority")), 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
     m_command_priority = new wxChoice(content, wxID_ANY);
@@ -153,6 +158,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_command_group->SetSelection(0);
     command_actions->Add(m_command_group, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
     command_actions->AddStretchSpacer();
+    command_actions->Add(m_simulate_command, 0, wxRIGHT, FromDIP(8));
     command_actions->Add(m_send_command, 0);
     layout->Add(command_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
@@ -200,6 +206,17 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         m_command->Clear();
     });
     m_run_macro->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { run_selected_macro(); });
+    m_simulate_command->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { simulate_command(); });
+    m_command_log->Bind(wxEVT_LISTBOX, [this](wxCommandEvent&) {
+        const int selection = m_command_log->GetSelection();
+        if (m_command_response == nullptr)
+            return;
+        if (selection == wxNOT_FOUND || static_cast<size_t>(selection) >= m_command_responses.size()) {
+            m_command_response->Clear();
+            return;
+        }
+        m_command_response->SetValue(m_command_responses[selection]);
+    });
     cancel_command_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { cancel_selected_command(); });
     retry_command_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { retry_selected_command(); });
     Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { save_connection(); EndModal(wxID_OK); }, wxID_OK);
@@ -280,6 +297,8 @@ QidiAdminDialog::~QidiAdminDialog()
         m_queue_retry_request->cancel();
     if (m_camera_request)
         m_camera_request->cancel();
+    if (m_simulation_request)
+        m_simulation_request->cancel();
 }
 
 void QidiAdminDialog::refresh_command_queue()
@@ -340,6 +359,9 @@ void QidiAdminDialog::refresh_command_history()
                 if (!entries.is_array())
                     return;
                 weak_this->m_command_log->Clear();
+                weak_this->m_command_responses.clear();
+                if (weak_this->m_command_response)
+                    weak_this->m_command_response->Clear();
                 if (entries.empty()) {
                     weak_this->m_command_log->Append(_L("No server command history yet."));
                     return;
@@ -351,11 +373,18 @@ void QidiAdminDialog::refresh_command_history()
                         script = script.Left(59) + "…";
                     const bool success = entry.value("success", 0) != 0;
                     const int latency = entry.value("latency_ms", -1);
+                    wxString response = wx_from_utf8(entry.value("response", ""));
+                    if (response.empty())
+                        response = _L("The server did not return a response body.");
                     weak_this->m_command_log->Append(wxString::Format(
                         _L("[%s · %d ms] %s"), success ? _L("OK") : _L("ERROR"), latency, script));
+                    weak_this->m_command_responses.emplace_back(std::move(response));
                 }
             } catch (const std::exception&) {
                 weak_this->m_command_log->Clear();
+                weak_this->m_command_responses.clear();
+                if (weak_this->m_command_response)
+                    weak_this->m_command_response->Clear();
                 weak_this->m_command_log->Append(_L("Command history response could not be parsed."));
             }
         });
@@ -411,6 +440,46 @@ void QidiAdminDialog::retry_selected_command()
                 weak_this->refresh_command_queue();
             } else {
                 weak_this->show_result(result);
+            }
+        });
+    });
+}
+
+void QidiAdminDialog::simulate_command()
+{
+    if (m_simulation_request)
+        return;
+    const std::string script = utf8_from_wx(m_command->GetValue());
+    if (script.empty()) {
+        m_status->SetLabel(_L("Enter G-code before reviewing it."));
+        return;
+    }
+    m_status->SetLabel(_L("Reviewing G-code on Raspberry…"));
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_simulation_request = QidiAdminGateway::simulate_command(connection(), script, [weak_this](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_simulation_request.reset();
+            if (!result.ok) {
+                weak_this->show_result(result);
+                return;
+            }
+            try {
+                const auto report = nlohmann::json::parse(result.body);
+                const bool safe = report.value("ok", false);
+                wxString text = safe ? _L("No blocking safety rules were found.") : _L("Safety review found blocking rules.");
+                if (const auto warnings = report.find("warnings"); warnings != report.end() && warnings->is_array()) {
+                    for (const auto& warning : *warnings) {
+                        text += "\n" + wxString::Format(_L("Line %d: %s"), warning.value("line", 0),
+                            wx_from_utf8(warning.value("message", "")));
+                    }
+                }
+                if (weak_this->m_command_response)
+                    weak_this->m_command_response->SetValue(text);
+                weak_this->m_status->SetLabel(safe ? _L("G-code review passed.") : _L("G-code review requires attention."));
+            } catch (const std::exception&) {
+                weak_this->m_status->SetLabel(_L("G-code review response could not be parsed."));
             }
         });
     });
@@ -563,6 +632,7 @@ void QidiAdminDialog::refresh_access_role()
                 if (weak_this->m_stop) weak_this->m_stop->Enable(may_control);
                 if (weak_this->m_run_macro) weak_this->m_run_macro->Enable(may_control);
                 if (weak_this->m_send_command) weak_this->m_send_command->Enable(may_control);
+                if (weak_this->m_simulate_command) weak_this->m_simulate_command->Enable(may_control);
             } catch (const std::exception&) {
                 weak_this->m_access_role->SetLabel(_L("Access role: response could not be parsed."));
             }

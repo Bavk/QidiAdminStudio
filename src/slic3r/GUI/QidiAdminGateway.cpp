@@ -253,6 +253,19 @@ Http::Ptr QidiAdminGateway::enqueue_command(const QidiAdminConnection& connectio
     return request(connection, "/api/v1/command-queue", &body, std::move(callback));
 }
 
+Http::Ptr QidiAdminGateway::simulate_command(const QidiAdminConnection& connection,
+                                             const std::string& script,
+                                             ResultCallback callback)
+{
+    if (script.empty()) {
+        callback({false, 0, {}, "G-code command is empty."});
+        return nullptr;
+    }
+    const nlohmann::json payload = {{"script", script}, {"printer_id", "q2"}};
+    const std::string body = payload.dump();
+    return request(connection, "/api/v1/printer/gcode/simulate", &body, std::move(callback));
+}
+
 Http::Ptr QidiAdminGateway::request(const QidiAdminConnection& connection,
                                     const std::string& path,
                                     const std::string* json_body,

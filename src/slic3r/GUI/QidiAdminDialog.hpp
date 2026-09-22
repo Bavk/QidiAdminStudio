@@ -53,6 +53,7 @@ private:
     void                refresh_command_history();
     void                cancel_selected_command();
     void                retry_selected_command();
+    void                simulate_command();
     void                run_selected_macro();
     void                send_command(const std::string& script, int priority, const wxString& action,
                                      const std::string& queue_group = "Qidi Admin Studio");
@@ -76,6 +77,7 @@ private:
     wxStaticText*       m_access_role {nullptr};
     wxListBox*          m_queue {nullptr};
     wxListBox*          m_command_log {nullptr};
+    wxTextCtrl*         m_command_response {nullptr};
     wxChoice*           m_macro_choice {nullptr};
     wxStaticBitmap*     m_camera {nullptr};
     wxStaticText*       m_camera_status {nullptr};
@@ -85,6 +87,7 @@ private:
     wxButton*           m_stop {nullptr};
     wxButton*           m_run_macro {nullptr};
     wxButton*           m_send_command {nullptr};
+    wxButton*           m_simulate_command {nullptr};
     Http::Ptr           m_pending_request;
     Http::Ptr           m_status_request;
     Http::Ptr           m_material_request;
@@ -99,12 +102,14 @@ private:
     Http::Ptr           m_queue_cancel_request;
     Http::Ptr           m_queue_retry_request;
     Http::Ptr           m_camera_request;
+    Http::Ptr           m_simulation_request;
     wxTimer             m_camera_timer;
     int                 m_refresh_ticks {0};
     std::chrono::steady_clock::time_point m_camera_last_frame;
     double              m_camera_fps {0.0};
     std::vector<ServerMacro> m_macros;
     std::vector<int>    m_queue_command_ids;
+    std::vector<wxString> m_command_responses;
 };
 
 } // namespace Slic3r::GUI
