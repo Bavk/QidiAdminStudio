@@ -5,6 +5,7 @@
 #include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/choice.h>
+#include <wx/listbox.h>
 #include <wx/mstream.h>
 #include <wx/sizer.h>
 #include <wx/statbmp.h>
@@ -63,6 +64,12 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     layout->Add(m_material, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_maintenance = new wxStaticText(this, wxID_ANY, _L("Maintenance: loading from Raspberry…"));
     layout->Add(m_maintenance, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+
+    layout->Add(new wxStaticText(this, wxID_ANY, _L("Raspberry command queue")), 0,
+        wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    m_queue = new wxListBox(this, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(480, 84)));
+    m_queue->Append(_L("Loading queue…"));
+    layout->Add(m_queue, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
     auto* macro_row = new wxBoxSizer(wxHORIZONTAL);
     m_macro_choice = new wxChoice(this, wxID_ANY);
@@ -134,6 +141,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         refresh_camera();
         if (++m_refresh_ticks % 4 == 0)
             refresh_status();
+        if (m_refresh_ticks % 8 == 0)
+            refresh_command_queue();
         if (m_refresh_ticks % 12 == 0)
             refresh_materials();
         if (m_refresh_ticks % 20 == 0)
@@ -148,6 +157,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         refresh_materials();
         refresh_macros();
         refresh_maintenance();
+        refresh_command_queue();
     }
     wxGetApp().UpdateDlgDarkUI(this);
 }
@@ -165,8 +175,48 @@ QidiAdminDialog::~QidiAdminDialog()
         m_macro_request->cancel();
     if (m_maintenance_request)
         m_maintenance_request->cancel();
+    if (m_queue_request)
+        m_queue_request->cancel();
     if (m_camera_request)
         m_camera_request->cancel();
+}
+
+void QidiAdminDialog::refresh_command_queue()
+{
+    if (m_queue_request)
+        return;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_queue_request = QidiAdminGateway::fetch_command_queue(connection(), [weak_this](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_queue_request.reset();
+            if (!result.ok)
+                return;
+            try {
+                const auto entries = nlohmann::json::parse(result.body);
+                if (!entries.is_array())
+                    return;
+                weak_this->m_queue->Clear();
+                if (entries.empty()) {
+                    weak_this->m_queue->Append(_L("No queued or recent commands."));
+                    return;
+                }
+                for (const auto& entry : entries) {
+                    const wxString status = wx_from_utf8(entry.value("status", "unknown"));
+                    wxString script = wx_from_utf8(entry.value("script", ""));
+                    script.Replace("\n", " ");
+                    if (script.length() > 70)
+                        script = script.Left(67) + "…";
+                    const int priority = entry.value("priority", 0);
+                    weak_this->m_queue->Append(wxString::Format(_L("[%s · P%d] %s"), status, priority, script));
+                }
+            } catch (const std::exception&) {
+                weak_this->m_queue->Clear();
+                weak_this->m_queue->Append(_L("Command queue response could not be parsed."));
+            }
+        });
+    });
 }
 
 void QidiAdminDialog::refresh_maintenance()

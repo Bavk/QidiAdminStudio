@@ -13,6 +13,7 @@
 class wxButton;
 class wxCheckBox;
 class wxChoice;
+class wxListBox;
 class wxStaticText;
 class wxStaticBitmap;
 class wxTextCtrl;
@@ -42,6 +43,7 @@ private:
     void                refresh_materials();
     void                refresh_macros();
     void                refresh_maintenance();
+    void                refresh_command_queue();
     void                run_selected_macro();
     void                send_command(const std::string& script, int priority, const wxString& action);
     void                refresh_camera();
@@ -55,6 +57,7 @@ private:
     wxStaticText*       m_status {nullptr};
     wxStaticText*       m_material {nullptr};
     wxStaticText*       m_maintenance {nullptr};
+    wxListBox*          m_queue {nullptr};
     wxChoice*           m_macro_choice {nullptr};
     wxStaticBitmap*     m_camera {nullptr};
     wxButton*           m_check {nullptr};
@@ -66,6 +69,7 @@ private:
     Http::Ptr           m_material_request;
     Http::Ptr           m_macro_request;
     Http::Ptr           m_maintenance_request;
+    Http::Ptr           m_queue_request;
     Http::Ptr           m_camera_request;
     wxTimer             m_camera_timer;
     int                 m_refresh_ticks {0};
