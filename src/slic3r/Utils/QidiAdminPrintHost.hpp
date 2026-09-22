@@ -35,6 +35,7 @@ private:
     std::string m_api_key;
     std::string m_ca_file;
     bool        m_ssl_revoke_best_effort;
+    bool        m_verify_tls {true};
 };
 
 } // namespace Slic3r

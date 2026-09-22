@@ -7,7 +7,7 @@ Raspberry Qidi Admin Server. Android остаётся отдельным кли�
 
 | Возможность Qidi Admin App | Серверный интерфейс | Нативное место в Qidi Admin Studio | Состояние |
 | --- | --- | --- | --- |
-| Подключение, HTTPS, API-ключ | `/api/v1/status` | `Qidi Admin` → настройки подключения | реализовано |
+| Подключение, HTTPS, API-ключ | `/api/v1/status` | `Qidi Admin` → настройки подключения и Print Host | реализовано |
 | Защищённое хранение ключа | Windows Credential Manager | общие настройки и Print Host fallback | реализовано |
 | Температуры, состояние, процент, время | `/api/v1/status` | виджет Admin / строка состояния | базовая реализация |
 | Камера и снимок | `/api/v1/camera/snapshot` | виджет Admin | базовая реализация |

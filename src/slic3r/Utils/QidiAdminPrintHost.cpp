@@ -27,8 +27,11 @@ QidiAdminPrintHost::QidiAdminPrintHost(DynamicPrintConfig* config)
     // presets are shareable.  The Admin dialog owns the global server address
     // and keeps the API key in Windows Credential Manager, so use it only as
     // a fallback. Per-printer values always take precedence.
-    if (m_host.empty())
+    const bool using_admin_connection = m_host.empty();
+    if (using_admin_connection) {
         m_host = GUI::wxGetApp().app_config->get("qidi_admin", "endpoint");
+        m_verify_tls = GUI::wxGetApp().app_config->get("qidi_admin", "verify_tls") != "false";
+    }
     if (m_api_key.empty())
         m_api_key = GUI::QidiAdminCredentials::load_api_key();
 }
@@ -62,7 +65,7 @@ void QidiAdminPrintHost::set_auth(Http& http) const
         http.ca_file(m_ca_file);
     // The gateway carries a control token. Do not silently downgrade HTTPS.
     if (m_host.rfind("https://", 0) == 0)
-        http.tls_verify(true);
+        http.tls_verify(m_verify_tls);
 }
 
 bool QidiAdminPrintHost::test(wxString& message) const
