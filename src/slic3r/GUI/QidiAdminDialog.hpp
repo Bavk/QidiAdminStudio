@@ -37,6 +37,7 @@ private:
     };
 
     QidiAdminConnection connection() const;
+    void                on_dpi_changed(const wxRect&) override { Fit(); Layout(); }
     void                save_connection();
     void                check_connection();
     void                refresh_status(bool announce = false);
