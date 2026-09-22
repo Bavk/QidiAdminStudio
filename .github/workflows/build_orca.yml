@@ -480,13 +480,16 @@ jobs:
         # env:
         #   WindowsSdkDir: 'C:\Program Files (x86)\Windows Kits\10\'
         #   WindowsSDKVersion: '10.0.26100.0\'
-        # --tests builds the unit tests too; the unit_tests_windows_* jobs run them.
+        # The Qidi Admin Studio release lane builds the application itself.
+        # Test targets roughly double the Windows graph and can starve the
+        # hosted runner for hours; they belong to a dedicated test lane, not
+        # to producing the installable desktop artifact.
         run: |
           # cache-path is the install directory inside the deps build directory.
           $deps = (Split-Path "${{ inputs.cache-path }}").Replace('\', '/')
           # -l compiles with Visual Studio's clang-cl and -x builds with Ninja; --msvc --msbuild is cl under the Visual Studio generator.
           $flags = if ("${{ inputs.compiler }}" -eq "clang") { "-l", "-x" } else { "--msvc", "--msbuild" }
-          .\build_win.bat -s --tests -i --arch ${{ inputs.arch }} --build-dir $env:BUILD_DIR --deps-dir $deps @flags
+          .\build_win.bat -s -i --arch ${{ inputs.arch }} --build-dir $env:BUILD_DIR --deps-dir $deps @flags
         shell: pwsh
 
       - name: Build system preset cache (Windows)
@@ -497,13 +500,13 @@ jobs:
         run: scripts\build_preset_cache.bat --prune-source "%BUILD_DIR%" "resources\profiles" "%BUILD_DIR%\OrcaSlicer\resources\profiles"
 
       - name: Pack unit tests Win
-        if: runner.os == 'Windows'
+        if: ${{ false }} # Test artifact is produced by the dedicated test lane.
         working-directory: ${{ github.workspace }}
         shell: pwsh
         run: tar -cvf build_tests.tar ${{ env.BUILD_DIR }}/tests
 
       - name: Upload Test Artifact Win
-        if: runner.os == 'Windows'
+        if: ${{ false }} # Test artifact is produced by the dedicated test lane.
         uses: actions/upload-artifact@v7
         with:
           name: ${{ github.sha }}-tests-windows-${{ inputs.arch }}
