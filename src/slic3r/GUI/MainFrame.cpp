@@ -1350,6 +1350,8 @@ void MainFrame::init_tabpanel() {
         wxWindow* panel = m_tabpanel->GetCurrentPage();
         //wxString page_text = m_tabpanel->GetPageText(sel);
         m_last_selected_tab = m_tabpanel->GetSelectedPageName();
+        if (m_qidi_admin_page)
+            m_qidi_admin_page->set_active(panel == m_qidi_admin_page);
         if (panel == m_plater) {
             if (m_last_selected_tab == TAB_ID_PREPARE) {
                 wxPostEvent(m_plater, SimpleEvent(EVT_GLVIEWTOOLBAR_3D));
@@ -1436,6 +1438,9 @@ void MainFrame::init_tabpanel() {
     m_monitor = new MonitorPanel(m_tabpanel, wxID_ANY, wxDefaultPosition, wxDefaultSize);
     m_monitor->SetBackgroundColour(*wxWHITE);
     m_tabpanel->AddPage(TAB_ID_MONITOR, m_monitor, _L("Device"), "tab_monitor_active");
+
+    m_qidi_admin_page = new QidiAdminDialog(m_tabpanel);
+    m_tabpanel->AddPage(TAB_ID_QIDI_ADMIN, m_qidi_admin_page, _L("Qidi Admin"), "tab_monitor_active");
 
     m_printer_view = new PrinterWebView(m_tabpanel);
     Bind(EVT_LOAD_PRINTER_URL, [this](LoadPrinterViewEvent &evt) {
@@ -2761,6 +2766,8 @@ void MainFrame::on_sys_color_changed()
     wxGetApp().plater()->sys_color_changed();
     if(m_monitor)
         m_monitor->on_sys_color_changed();
+    if(m_qidi_admin_page)
+        wxGetApp().UpdateDarkUIWin(m_qidi_admin_page);
     if(m_calibration)
         m_calibration->on_sys_color_changed();
     // update Tabs
@@ -2866,8 +2873,7 @@ wxMenu* MainFrame::generate_qidi_admin_menu()
     auto* menu = new wxMenu();
     append_menu_item(menu, wxID_ANY, _L("Server connection"), _L("Configure Qidi Admin Server"),
         [this](wxCommandEvent&) {
-            QidiAdminDialog dialog(this);
-            dialog.ShowModal();
+            select_tab(TAB_ID_QIDI_ADMIN);
         });
     return menu;
 }

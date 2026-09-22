@@ -7,6 +7,7 @@
 
 #include <wx/weakref.h>
 #include <wx/timer.h>
+#include <wx/panel.h>
 
 #include "GUI_Utils.hpp"
 #include "QidiAdminGateway.hpp"
@@ -24,10 +25,11 @@ namespace Slic3r::GUI {
 // The first native surface for the existing Qidi Admin Server. It is kept
 // deliberately separate from Orca's project/preset state: changing a server
 // address can never alter a 3MF file or a printer profile.
-class QidiAdminDialog : public DPIDialog {
+class QidiAdminDialog : public wxPanel {
 public:
     explicit QidiAdminDialog(wxWindow* parent);
     ~QidiAdminDialog() override;
+    void set_active(bool active);
 
 private:
     struct ServerMacro {
@@ -44,7 +46,6 @@ private:
     };
 
     QidiAdminConnection connection() const;
-    void                on_dpi_changed(const wxRect&) override { Fit(); Layout(); }
     void                save_connection();
     void                check_connection();
     void                refresh_status(bool announce = false);
@@ -55,6 +56,7 @@ private:
     void                refresh_diagnostics();
     void                refresh_events();
     void                refresh_access_role();
+    void                invalidate_access_role();
     void                refresh_command_queue();
     void                refresh_command_history();
     void                export_command_history(bool json_format);
@@ -116,6 +118,8 @@ private:
     int                 m_refresh_ticks {0};
     std::chrono::steady_clock::time_point m_camera_last_frame;
     double              m_camera_fps {0.0};
+    unsigned long long  m_camera_generation {0};
+    unsigned long long  m_access_generation {0};
     std::vector<ServerMacro> m_macros;
     std::vector<int>    m_queue_command_ids;
     std::vector<wxString> m_command_responses;

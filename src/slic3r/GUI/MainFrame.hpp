@@ -45,6 +45,7 @@
 #endif
 #define TAB_ID_PREPARE       "prepare"
 #define TAB_ID_PREVIEW       "preview"
+#define TAB_ID_QIDI_ADMIN    "qidi_admin"
 #define TAB_ID_MONITOR       "monitor"
 // Printer-agents mode shows the legacy web page alongside the native Device tab, so it needs an
 // id of its own: sharing TAB_ID_MONITOR makes every name lookup resolve to whichever of the two
@@ -67,6 +68,7 @@ namespace GUI
 
 class Tab;
 class PrintHostQueueDialog;
+class QidiAdminDialog;
 class Plater;
 #ifdef SLIC3R_CAD
 class DesignPanel;
@@ -449,6 +451,7 @@ public:
 #endif
     //BBS: GUI refactor
     MonitorPanel*         m_monitor{ nullptr };
+    QidiAdminDialog*      m_qidi_admin_page{ nullptr };
 
     //AuxiliaryPanel*       m_auxiliary{ nullptr };
     MultiMachinePage*     m_multi_machine{ nullptr };

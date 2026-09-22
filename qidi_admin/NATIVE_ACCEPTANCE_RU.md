@@ -14,7 +14,7 @@ Qidi Admin Server, без перехода в отдельный Flutter-дес�
 
 ## 2. Соединение с Raspberry
 
-1. Открыть `Qidi Admin → Server connection`.
+1. Открыть вкладку `Qidi Admin` (или выбрать `Qidi Admin → Server connection`).
 2. Указать HTTPS-адрес Raspberry-сервера и API-ключ; сертификат TLS оставить
    включённым для публичного домена.
 3. Нажать `Check server`: должны отобразиться состояние Q2, прогресс и

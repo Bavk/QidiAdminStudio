@@ -49,12 +49,11 @@ wxString format_duration(double seconds)
 } // namespace
 
 QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
-    : DPIDialog(parent, wxID_ANY, _L("Qidi Admin Server"), wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
+    : wxPanel(parent, wxID_ANY)
     , m_camera_timer(this)
 {
-    // The administrator contains a live video feed, queues and a terminal.
-    // Keeping it in a scrolled child is essential on laptop screens: wx's
-    // default "fit" behaviour otherwise makes the bottom actions unreachable.
+    // The native tab contains a live video feed, queues and a terminal.
+    // Its scrolled child keeps the controls reachable on laptop screens.
     auto* root_layout = new wxBoxSizer(wxVERTICAL);
     auto* content = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL | wxTAB_TRAVERSAL);
     content->SetScrollRate(0, FromDIP(12));
@@ -182,25 +181,25 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     command_actions->Add(m_send_command, 0);
     layout->Add(command_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
-    auto* buttons = new wxStdDialogButtonSizer();
+    auto* buttons = new wxBoxSizer(wxHORIZONTAL);
     m_check = new wxButton(content, wxID_ANY, _L("Check server"));
-    buttons->AddButton(m_check);
-    buttons->AddButton(new wxButton(content, wxID_OK, _L("Save")));
-    buttons->AddButton(new wxButton(content, wxID_CANCEL));
-    buttons->Realize();
+    auto* save_button = new wxButton(content, wxID_ANY, _L("Save connection"));
+    buttons->Add(m_check, 0, wxRIGHT, FromDIP(8));
+    buttons->Add(save_button, 0);
     layout->Add(buttons, 0, wxALL | wxALIGN_RIGHT, FromDIP(12));
     content->SetSizer(layout);
     // Explicitly calculate the virtual size. This is required for reliable
     // vertical scrolling with some wxWidgets Windows builds.
     layout->FitInside(content);
-    content->SetMinSize(FromDIP(wxSize(520, 580)));
+    content->SetMinSize(FromDIP(wxSize(520, -1)));
     root_layout->Add(content, 1, wxEXPAND);
     SetSizer(root_layout);
-    SetSize(FromDIP(wxSize(620, 760)));
     SetMinSize(FromDIP(wxSize(520, 480)));
-    CentreOnParent();
 
     m_check->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { check_connection(); });
+    m_endpoint->Bind(wxEVT_TEXT, [this](wxCommandEvent&) { invalidate_access_role(); });
+    m_api_key->Bind(wxEVT_TEXT, [this](wxCommandEvent&) { invalidate_access_role(); });
+    m_verify_tls->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) { invalidate_access_role(); });
     m_pause->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { send_command("PAUSE", 80, _L("Pause")); });
     m_resume->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { send_command("RESUME", 80, _L("Resume")); });
     m_stop->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
@@ -255,11 +254,14 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     export_csv->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { export_command_history(false); });
     m_cancel_queued_command->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { cancel_selected_command(); });
     m_retry_queued_command->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { retry_selected_command(); });
-    Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { save_connection(); EndModal(wxID_OK); }, wxID_OK);
+    save_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        save_connection();
+        m_status->SetLabel(_L("Server connection saved."));
+        check_connection();
+    });
     Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
         // Do not continuously create failing requests while the connection
-        // form is still empty. This dialog is also used as the first-run
-        // setup surface.
+        // form is still empty. This tab also serves as first-run setup.
         const QidiAdminConnection value = connection();
         if (!QidiAdminGateway::is_valid_endpoint(value.endpoint))
             return;
@@ -285,9 +287,26 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         if (m_refresh_ticks % 120 == 0)
             refresh_access_role();
     }, m_camera_timer.GetId());
+    wxGetApp().UpdateDarkUIWin(this);
+}
+
+void QidiAdminDialog::set_active(bool active)
+{
+    if (!active) {
+        m_camera_timer.Stop();
+        ++m_camera_generation;
+        if (m_camera_request)
+            m_camera_request->cancel();
+        m_camera_request.reset();
+        m_camera_last_frame = {};
+        m_camera_fps = 0.0;
+        return;
+    }
+    if (m_camera_timer.IsRunning())
+        return;
+    m_refresh_ticks = 0;
     m_camera_timer.Start(250);
-    const QidiAdminConnection saved_connection = connection();
-    if (QidiAdminGateway::is_valid_endpoint(saved_connection.endpoint)) {
+    if (QidiAdminGateway::is_valid_endpoint(connection().endpoint)) {
         refresh_status();
         refresh_materials();
         refresh_macros();
@@ -299,7 +318,6 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         refresh_command_queue();
         refresh_command_history();
     }
-    wxGetApp().UpdateDlgDarkUI(this);
 }
 
 QidiAdminDialog::~QidiAdminDialog()
@@ -707,18 +725,39 @@ void QidiAdminDialog::refresh_events()
     });
 }
 
+void QidiAdminDialog::invalidate_access_role()
+{
+    ++m_access_generation;
+    if (m_access_role_request)
+        m_access_role_request->cancel();
+    m_access_role_request.reset();
+    m_access_role->SetLabel(_L("Access role: checking…"));
+    m_pause->Disable();
+    m_resume->Disable();
+    m_stop->Disable();
+    m_run_macro->Disable();
+    m_send_command->Disable();
+    m_simulate_command->Disable();
+    m_cancel_queued_command->Disable();
+    m_retry_queued_command->Disable();
+}
+
 void QidiAdminDialog::refresh_access_role()
 {
     if (m_access_role_request)
         return;
     wxWeakRef<QidiAdminDialog> weak_this(this);
-    m_access_role_request = QidiAdminGateway::fetch_access_role(connection(), [weak_this](QidiAdminResult result) {
-        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
-            if (!weak_this)
+    const auto generation = m_access_generation;
+    m_access_role_request = QidiAdminGateway::fetch_access_role(connection(), [weak_this, generation](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, generation, result = std::move(result)]() {
+            if (!weak_this || generation != weak_this->m_access_generation)
                 return;
             weak_this->m_access_role_request.reset();
-            if (!result.ok)
+            if (!result.ok) {
+                weak_this->invalidate_access_role();
+                weak_this->m_access_role->SetLabel(_L("Access role: unavailable."));
                 return;
+            }
             try {
                 const auto payload = nlohmann::json::parse(result.body);
                 const wxString role = wx_from_utf8(payload.value("role", "unknown"));
@@ -733,6 +772,7 @@ void QidiAdminDialog::refresh_access_role()
                 if (weak_this->m_cancel_queued_command) weak_this->m_cancel_queued_command->Enable(may_control);
                 if (weak_this->m_retry_queued_command) weak_this->m_retry_queued_command->Enable(may_control);
             } catch (const std::exception&) {
+                weak_this->invalidate_access_role();
                 weak_this->m_access_role->SetLabel(_L("Access role: response could not be parsed."));
             }
         });
@@ -845,6 +885,8 @@ void QidiAdminDialog::save_connection()
 
 void QidiAdminDialog::check_connection()
 {
+    invalidate_access_role();
+    refresh_access_role();
     refresh_status(true);
 }
 
@@ -892,11 +934,14 @@ void QidiAdminDialog::refresh_camera()
     if (m_camera_request || !m_camera)
         return;
     wxWeakRef<QidiAdminDialog> weak_this(this);
-    m_camera_request = QidiAdminGateway::fetch_camera_stream_frame(connection(), [weak_this](QidiAdminResult result) {
-        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
-            if (!weak_this)
+    const auto generation = m_camera_generation;
+    m_camera_request = QidiAdminGateway::fetch_camera_stream_frame(connection(), [weak_this, generation](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, generation, result = std::move(result)]() {
+            if (!weak_this || generation != weak_this->m_camera_generation)
                 return;
             weak_this->m_camera_request.reset();
+            if (!weak_this->m_camera_timer.IsRunning())
+                return;
             // A snapshot remains a useful degraded mode for camera proxies
             // that do not expose multipart MJPEG to native clients.
             if (!result.ok) {
@@ -913,11 +958,14 @@ void QidiAdminDialog::refresh_camera_snapshot()
     if (m_camera_request || !m_camera)
         return;
     wxWeakRef<QidiAdminDialog> weak_this(this);
-    m_camera_request = QidiAdminGateway::fetch_camera_snapshot(connection(), [weak_this](QidiAdminResult result) {
-        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
-            if (!weak_this)
+    const auto generation = m_camera_generation;
+    m_camera_request = QidiAdminGateway::fetch_camera_snapshot(connection(), [weak_this, generation](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, generation, result = std::move(result)]() {
+            if (!weak_this || generation != weak_this->m_camera_generation)
                 return;
             weak_this->m_camera_request.reset();
+            if (!weak_this->m_camera_timer.IsRunning())
+                return;
             weak_this->show_camera_frame(result);
         });
     });
