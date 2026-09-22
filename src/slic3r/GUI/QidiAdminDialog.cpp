@@ -70,6 +70,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     layout->Add(m_diagnostics, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_event = new wxStaticText(this, wxID_ANY, _L("Server events: loading…"));
     layout->Add(m_event, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    m_access_role = new wxStaticText(this, wxID_ANY, _L("Access role: checking…"));
+    layout->Add(m_access_role, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
 
     layout->Add(new wxStaticText(this, wxID_ANY, _L("Raspberry command queue")), 0,
         wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
@@ -204,6 +206,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
             refresh_diagnostics();
         if (m_refresh_ticks % 40 == 0)
             refresh_events();
+        if (m_refresh_ticks % 120 == 0)
+            refresh_access_role();
     }, m_camera_timer.GetId());
     m_camera_timer.Start(250);
     const QidiAdminConnection saved_connection = connection();
@@ -215,6 +219,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         refresh_print_history();
         refresh_diagnostics();
         refresh_events();
+        refresh_access_role();
         refresh_command_queue();
         refresh_command_history();
     }
@@ -240,6 +245,8 @@ QidiAdminDialog::~QidiAdminDialog()
         m_diagnostics_request->cancel();
     if (m_events_request)
         m_events_request->cancel();
+    if (m_access_role_request)
+        m_access_role_request->cancel();
     if (m_queue_request)
         m_queue_request->cancel();
     if (m_command_history_request)
@@ -506,6 +513,29 @@ void QidiAdminDialog::refresh_events()
                 weak_this->m_event->SetLabel(wxString::Format(_L("Latest server event [%s]: %s"), severity, message));
             } catch (const std::exception&) {
                 weak_this->m_event->SetLabel(_L("Server events: response could not be parsed."));
+            }
+        });
+    });
+}
+
+void QidiAdminDialog::refresh_access_role()
+{
+    if (m_access_role_request)
+        return;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_access_role_request = QidiAdminGateway::fetch_access_role(connection(), [weak_this](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_access_role_request.reset();
+            if (!result.ok)
+                return;
+            try {
+                const auto payload = nlohmann::json::parse(result.body);
+                const wxString role = wx_from_utf8(payload.value("role", "unknown"));
+                weak_this->m_access_role->SetLabel(wxString::Format(_L("Access role: %s"), role));
+            } catch (const std::exception&) {
+                weak_this->m_access_role->SetLabel(_L("Access role: response could not be parsed."));
             }
         });
     });

@@ -159,6 +159,11 @@ Http::Ptr QidiAdminGateway::fetch_events(const QidiAdminConnection& connection, 
     return request(connection, "/api/v1/events?limit=1", nullptr, std::move(callback));
 }
 
+Http::Ptr QidiAdminGateway::fetch_access_role(const QidiAdminConnection& connection, ResultCallback callback)
+{
+    return request(connection, "/api/v1/access/role", nullptr, std::move(callback));
+}
+
 Http::Ptr QidiAdminGateway::fetch_command_queue(const QidiAdminConnection& connection, ResultCallback callback)
 {
     return request(connection, "/api/v1/command-queue?limit=12", nullptr, std::move(callback));
