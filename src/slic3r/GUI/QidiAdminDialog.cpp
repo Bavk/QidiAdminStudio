@@ -7,6 +7,8 @@
 #include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/choice.h>
+#include <wx/choicdlg.h>
+#include <wx/dialog.h>
 #include <wx/filedlg.h>
 #include <wx/listbox.h>
 #include <wx/mstream.h>
@@ -81,12 +83,36 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     layout->Add(m_status, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_material = new wxStaticText(content, wxID_ANY, _L("Material: loading from Raspberry…"));
     layout->Add(m_material, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    layout->Add(new wxStaticText(content, wxID_ANY, _L("Spool catalog on Raspberry")), 0,
+        wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    m_spool_list = new wxListBox(content, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(480, 96)));
+    m_spool_list->Append(_L("Loading spools…"));
+    layout->Add(m_spool_list, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
+    auto* spool_actions = new wxBoxSizer(wxHORIZONTAL);
+    m_add_spool = new wxButton(content, wxID_ANY, _L("Add spool…"));
+    m_edit_spool = new wxButton(content, wxID_ANY, _L("Edit selected…"));
+    m_add_spool->Disable();
+    m_edit_spool->Disable();
+    spool_actions->Add(m_add_spool, 0, wxRIGHT, FromDIP(8));
+    spool_actions->Add(m_edit_spool, 0);
+    layout->Add(spool_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_maintenance = new wxStaticText(content, wxID_ANY, _L("Maintenance: loading from Raspberry…"));
     layout->Add(m_maintenance, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_history = new wxStaticText(content, wxID_ANY, _L("Print history: loading from Raspberry…"));
     layout->Add(m_history, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_diagnostics = new wxStaticText(content, wxID_ANY, _L("Raspberry health: loading…"));
     layout->Add(m_diagnostics, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    m_diagnostics_details = new wxButton(content, wxID_ANY, _L("Detailed Raspberry health…"));
+    m_diagnostics_details->Disable();
+    layout->Add(m_diagnostics_details, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    auto* backup_actions = new wxBoxSizer(wxHORIZONTAL);
+    m_create_klipper_backup = new wxButton(content, wxID_ANY, _L("Backup printer.cfg"));
+    m_compare_klipper_backups = new wxButton(content, wxID_ANY, _L("Compare Klipper backups…"));
+    m_create_klipper_backup->Disable();
+    m_compare_klipper_backups->Disable();
+    backup_actions->Add(m_create_klipper_backup, 0, wxRIGHT, FromDIP(8));
+    backup_actions->Add(m_compare_klipper_backups, 0);
+    layout->Add(backup_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_event = new wxStaticText(content, wxID_ANY, _L("Server events: loading…"));
     layout->Add(m_event, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_access_role = new wxStaticText(content, wxID_ANY, _L("Access role: checking…"));
@@ -129,8 +155,14 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_macro_choice->SetSelection(0);
     m_run_macro = new wxButton(content, wxID_ANY, _L("Run macro"));
     m_run_macro->Disable();
+    m_add_macro = new wxButton(content, wxID_ANY, _L("Add…"));
+    m_edit_macro = new wxButton(content, wxID_ANY, _L("Edit…"));
+    m_add_macro->Disable();
+    m_edit_macro->Disable();
     macro_row->Add(m_macro_choice, 1, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
-    macro_row->Add(m_run_macro, 0);
+    macro_row->Add(m_run_macro, 0, wxRIGHT, FromDIP(8));
+    macro_row->Add(m_add_macro, 0, wxRIGHT, FromDIP(8));
+    macro_row->Add(m_edit_macro, 0);
     layout->Add(macro_row, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
     m_camera = new wxStaticBitmap(content, wxID_ANY, wxNullBitmap, wxDefaultPosition, FromDIP(wxSize(480, 270)));
@@ -242,6 +274,13 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         m_command->Clear();
     });
     m_run_macro->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { run_selected_macro(); });
+    m_add_macro->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { edit_macro(true); });
+    m_edit_macro->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { edit_macro(false); });
+    m_diagnostics_details->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { show_diagnostics_details(); });
+    m_create_klipper_backup->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { create_klipper_backup(); });
+    m_compare_klipper_backups->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { compare_klipper_backups(); });
+    m_add_spool->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { edit_spool(true); });
+    m_edit_spool->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { edit_spool(false); });
     m_simulate_command->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { simulate_command(); });
     m_save_camera_snapshot->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { save_camera_snapshot(); });
     m_command_log->Bind(wxEVT_LISTBOX, [this](wxCommandEvent&) {
@@ -333,14 +372,20 @@ QidiAdminDialog::~QidiAdminDialog()
         m_status_request->cancel();
     if (m_material_request)
         m_material_request->cancel();
+    if (m_spool_write_request)
+        m_spool_write_request->cancel();
     if (m_macro_request)
         m_macro_request->cancel();
+    if (m_macro_write_request)
+        m_macro_write_request->cancel();
     if (m_maintenance_request)
         m_maintenance_request->cancel();
     if (m_history_request)
         m_history_request->cancel();
     if (m_diagnostics_request)
         m_diagnostics_request->cancel();
+    if (m_klipper_backup_request)
+        m_klipper_backup_request->cancel();
     if (m_events_request)
         m_events_request->cancel();
     if (m_access_role_request)
@@ -673,13 +718,18 @@ void QidiAdminDialog::refresh_diagnostics()
     if (m_diagnostics_request)
         return;
     wxWeakRef<QidiAdminDialog> weak_this(this);
-    m_diagnostics_request = QidiAdminGateway::fetch_diagnostics(connection(), [weak_this](QidiAdminResult result) {
-        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
-            if (!weak_this)
+    const auto generation = m_access_generation;
+    m_diagnostics_request = QidiAdminGateway::fetch_diagnostics(connection(), [weak_this, generation](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, generation, result = std::move(result)]() {
+            if (!weak_this || generation != weak_this->m_access_generation)
                 return;
             weak_this->m_diagnostics_request.reset();
-            if (!result.ok)
+            if (!result.ok) {
+                weak_this->m_diagnostics_json.clear();
+                weak_this->m_diagnostics_details->Disable();
+                weak_this->m_diagnostics->SetLabel(_L("Raspberry health: diagnostics unavailable."));
                 return;
+            }
             try {
                 const auto report = nlohmann::json::parse(result.body);
                 const bool ready = report.value("ok", false);
@@ -693,8 +743,213 @@ void QidiAdminDialog::refresh_diagnostics()
                     ready ? _L("ready") : _L("attention"),
                     moonraker_ok ? _L("online") : _L("offline"),
                     camera_ok ? _L("online") : _L("unavailable"), latency));
+                weak_this->m_diagnostics_json = result.body;
+                weak_this->m_diagnostics_details->Enable();
             } catch (const std::exception&) {
+                weak_this->m_diagnostics_json.clear();
+                weak_this->m_diagnostics_details->Disable();
                 weak_this->m_diagnostics->SetLabel(_L("Raspberry health: response could not be parsed."));
+            }
+        });
+    });
+}
+
+void QidiAdminDialog::show_diagnostics_details()
+{
+    if (m_diagnostics_json.empty())
+        return;
+    try {
+        const auto report = nlohmann::json::parse(m_diagnostics_json);
+        const auto object_at = [&report](const char* key) {
+            const auto it = report.find(key);
+            return it != report.end() && it->is_object() ? *it : nlohmann::json::object();
+        };
+        const auto moonraker = object_at("moonraker");
+        const auto camera = object_at("camera");
+        const auto database = object_at("database");
+        const auto host = object_at("host");
+        const auto network = object_at("network");
+        const auto maintenance = object_at("maintenance");
+        const auto storage_it = host.find("storage");
+        const auto storage = storage_it != host.end() && storage_it->is_object()
+            ? *storage_it : nlohmann::json::object();
+        const auto gateway_it = network.find("publicGateway");
+        const auto gateway = gateway_it != network.end() && gateway_it->is_object()
+            ? *gateway_it : nlohmann::json::object();
+        const auto snapshot_it = camera.find("snapshot");
+        const auto snapshot = snapshot_it != camera.end() && snapshot_it->is_object()
+            ? *snapshot_it : nlohmann::json::object();
+        const auto stream_it = camera.find("stream");
+        const auto stream = stream_it != camera.end() && stream_it->is_object()
+            ? *stream_it : nlohmann::json::object();
+        const wxString online = _L("online");
+        const wxString offline = _L("unavailable");
+        wxString details;
+        details << wxString::Format(_L("Overall: %s\n"), report.value("ok", false) ? _L("ready") : _L("attention"));
+        details << wxString::Format(_L("Moonraker: %s\n"), moonraker.value("reachable", false) ? online : offline);
+        details << wxString::Format(_L("Camera snapshot: %s\n"), snapshot.value("ok", false) ? online : offline);
+        details << wxString::Format(_L("Camera stream: %s\n"), stream.value("ok", false) ? online : offline);
+        details << wxString::Format(_L("Database: %s · %.1f MB\n"),
+            database.value("healthy", false) ? _L("healthy") : _L("check database"),
+            database.value("sizeBytes", 0.0) / 1048576.0);
+        details << wxString::Format(_L("Storage: %.1f%% used · %.1f GB free\n"),
+            storage.value("usedPercent", 0.0), storage.value("freeBytes", 0.0) / 1073741824.0);
+        const auto temp_it = host.find("temperatureC");
+        if (temp_it != host.end() && temp_it->is_number())
+            details << wxString::Format(_L("Raspberry CPU temperature: %.1f°C\n"), temp_it->get<double>());
+        if (gateway.value("configured", false))
+            details << wxString::Format(_L("Public VPS/Rathole path: %s · %d ms\n"),
+                gateway.value("reachable", false) ? online : offline, gateway.value("latencyMs", -1));
+        else
+            details << _L("Public VPS/Rathole path: not configured\n");
+        details << wxString::Format(_L("Maintenance mode: %s\n"),
+            maintenance.value("enabled", false) ? _L("enabled") : _L("off"));
+        details << wxString::Format(_L("Server response: %d ms\n"), report.value("latencyMs", -1));
+        const auto tasks = object_at("tasks");
+        if (!tasks.empty()) {
+            details << _L("\nBackground services:\n");
+            for (auto it = tasks.begin(); it != tasks.end(); ++it)
+                if (it.value().is_string())
+                    details << wx_from_utf8(it.key()) << ": " << wx_from_utf8(it.value().get<std::string>()) << "\n";
+        }
+        wxDialog dialog(this, wxID_ANY, _L("Raspberry server health"),
+            wxDefaultPosition, FromDIP(wxSize(520, 460)), wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+        auto* layout = new wxBoxSizer(wxVERTICAL);
+        auto* body = new wxTextCtrl(&dialog, wxID_ANY, details, wxDefaultPosition,
+            FromDIP(wxSize(480, 380)), wxTE_MULTILINE | wxTE_READONLY);
+        layout->Add(body, 1, wxALL | wxEXPAND, FromDIP(12));
+        layout->Add(dialog.CreateButtonSizer(wxOK), 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_RIGHT, FromDIP(12));
+        dialog.SetSizer(layout);
+        wxGetApp().UpdateDarkUIWin(&dialog);
+        dialog.ShowModal();
+    } catch (const std::exception&) {
+        m_diagnostics->SetLabel(_L("Raspberry health: response could not be parsed."));
+    }
+}
+
+void QidiAdminDialog::create_klipper_backup()
+{
+    if (!m_may_manage_spools || m_klipper_backup_request)
+        return;
+    m_create_klipper_backup->Disable();
+    const auto generation = m_access_generation;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_klipper_backup_request = QidiAdminGateway::create_klipper_backup(connection(), [weak_this, generation](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, generation, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_klipper_backup_request.reset();
+            if (generation != weak_this->m_access_generation)
+                return;
+            weak_this->m_create_klipper_backup->Enable(weak_this->m_may_manage_spools);
+            if (!result.ok) {
+                weak_this->m_status->SetLabel(wxString::Format(_L("printer.cfg backup failed: HTTP %u"), result.status));
+                return;
+            }
+            try {
+                const auto payload = nlohmann::json::parse(result.body);
+                weak_this->m_status->SetLabel(wxString::Format(_L("printer.cfg backup saved on Raspberry: %s"),
+                    wx_from_utf8(payload.value("backup", "unknown"))));
+            } catch (const std::exception&) {
+                weak_this->m_status->SetLabel(_L("printer.cfg backup created on Raspberry."));
+            }
+        });
+    });
+}
+
+void QidiAdminDialog::compare_klipper_backups()
+{
+    if (!m_may_manage_spools || m_klipper_backup_request)
+        return;
+    m_compare_klipper_backups->Disable();
+    const auto generation = m_access_generation;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_klipper_backup_request = QidiAdminGateway::fetch_klipper_backups(connection(), [weak_this, generation](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, generation, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_klipper_backup_request.reset();
+            if (generation != weak_this->m_access_generation)
+                return;
+            weak_this->m_compare_klipper_backups->Enable(weak_this->m_may_manage_spools);
+            if (!result.ok) {
+                weak_this->m_status->SetLabel(wxString::Format(_L("Klipper backups unavailable: HTTP %u"), result.status));
+                return;
+            }
+            try {
+                const auto backups = nlohmann::json::parse(result.body);
+                if (!backups.is_array())
+                    throw std::runtime_error("Backup list is not an array");
+                wxArrayString choices;
+                std::vector<std::string> names;
+                for (const auto& item : backups) {
+                    if (!item.is_object())
+                        continue;
+                    const std::string name = item.value("name", "");
+                    if (name.empty())
+                        continue;
+                    names.push_back(name);
+                    choices.Add(wx_from_utf8(name));
+                }
+                if (names.size() < 2) {
+                    weak_this->m_status->SetLabel(_L("Create at least two Klipper backups before comparing."));
+                    return;
+                }
+                wxMultiChoiceDialog dialog(weak_this, _L("Select exactly two backups to compare"),
+                    _L("Klipper backup versions"), choices);
+                wxGetApp().UpdateDarkUIWin(&dialog);
+                if (dialog.ShowModal() != wxID_OK)
+                    return;
+                const wxArrayInt selected = dialog.GetSelections();
+                if (selected.GetCount() != 2) {
+                    wxMessageBox(_L("Select exactly two backups."), _L("Compare backups"),
+                        wxOK | wxICON_INFORMATION, weak_this);
+                    return;
+                }
+                const std::string before = names[static_cast<size_t>(selected[1])];
+                const std::string after = names[static_cast<size_t>(selected[0])];
+                weak_this->m_compare_klipper_backups->Disable();
+                weak_this->m_klipper_backup_request = QidiAdminGateway::diff_klipper_backups(
+                    weak_this->connection(), before, after, [weak_this, generation](QidiAdminResult comparison) {
+                        wxTheApp->CallAfter([weak_this, generation, comparison = std::move(comparison)]() {
+                            if (!weak_this)
+                                return;
+                            weak_this->m_klipper_backup_request.reset();
+                            if (generation != weak_this->m_access_generation)
+                                return;
+                            weak_this->m_compare_klipper_backups->Enable(weak_this->m_may_manage_spools);
+                            if (!comparison.ok) {
+                                weak_this->m_status->SetLabel(wxString::Format(_L("Backup comparison failed: HTTP %u"), comparison.status));
+                                return;
+                            }
+                            try {
+                                const auto payload = nlohmann::json::parse(comparison.body);
+                                wxString diff;
+                                const auto lines = payload.find("diff");
+                                if (lines != payload.end() && lines->is_array())
+                                    for (const auto& line : *lines)
+                                        if (line.is_string())
+                                            diff << wx_from_utf8(line.get<std::string>()) << "\n";
+                                if (diff.empty())
+                                    diff = _L("No differences between these backups.");
+                                wxDialog diff_dialog(weak_this, wxID_ANY, _L("Klipper configuration differences"),
+                                    wxDefaultPosition, weak_this->FromDIP(wxSize(720, 520)), wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+                                auto* layout = new wxBoxSizer(wxVERTICAL);
+                                auto* text = new wxTextCtrl(&diff_dialog, wxID_ANY, diff,
+                                    wxDefaultPosition, weak_this->FromDIP(wxSize(680, 450)), wxTE_MULTILINE | wxTE_READONLY);
+                                layout->Add(text, 1, wxALL | wxEXPAND, weak_this->FromDIP(12));
+                                layout->Add(diff_dialog.CreateButtonSizer(wxOK), 0,
+                                    wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_RIGHT, weak_this->FromDIP(12));
+                                diff_dialog.SetSizer(layout);
+                                wxGetApp().UpdateDarkUIWin(&diff_dialog);
+                                diff_dialog.ShowModal();
+                            } catch (const std::exception&) {
+                                weak_this->m_status->SetLabel(_L("Backup comparison response could not be parsed."));
+                            }
+                        });
+                    });
+            } catch (const std::exception&) {
+                weak_this->m_status->SetLabel(_L("Klipper backup list could not be parsed."));
             }
         });
     });
@@ -734,6 +989,26 @@ void QidiAdminDialog::refresh_events()
 void QidiAdminDialog::invalidate_access_role()
 {
     ++m_access_generation;
+    m_may_control = false;
+    m_may_manage_spools = false;
+    if (m_material_request)
+        m_material_request->cancel();
+    m_material_request.reset();
+    if (m_macro_request)
+        m_macro_request->cancel();
+    m_macro_request.reset();
+    m_macros.clear();
+    m_macro_choice->Clear();
+    m_macro_choice->Append(_L("Connect to view server macros."));
+    m_macro_choice->SetSelection(0);
+    m_spool_rows.clear();
+    m_spool_list->Clear();
+    m_spool_list->Append(_L("Connect to view Raspberry spools."));
+    m_material->SetLabel(_L("Material: waiting for server access…"));
+    m_diagnostics_json.clear();
+    m_diagnostics_details->Disable();
+    m_create_klipper_backup->Disable();
+    m_compare_klipper_backups->Disable();
     if (m_access_role_request)
         m_access_role_request->cancel();
     m_access_role_request.reset();
@@ -742,6 +1017,10 @@ void QidiAdminDialog::invalidate_access_role()
     m_resume->Disable();
     m_stop->Disable();
     m_run_macro->Disable();
+    m_add_macro->Disable();
+    m_edit_macro->Disable();
+    m_add_spool->Disable();
+    m_edit_spool->Disable();
     m_send_command->Disable();
     m_simulate_command->Disable();
     m_cancel_queued_command->Disable();
@@ -769,10 +1048,18 @@ void QidiAdminDialog::refresh_access_role()
                 const wxString role = wx_from_utf8(payload.value("role", "unknown"));
                 weak_this->m_access_role->SetLabel(wxString::Format(_L("Access role: %s"), role));
                 const bool may_control = role == _L("admin") || role == _L("operator");
+                weak_this->m_may_control = may_control;
+                weak_this->m_may_manage_spools = role == _L("admin");
                 if (weak_this->m_pause) weak_this->m_pause->Enable(may_control);
                 if (weak_this->m_resume) weak_this->m_resume->Enable(may_control);
                 if (weak_this->m_stop) weak_this->m_stop->Enable(may_control);
                 if (weak_this->m_run_macro) weak_this->m_run_macro->Enable(may_control);
+                if (weak_this->m_add_macro) weak_this->m_add_macro->Enable(weak_this->m_may_manage_spools);
+                if (weak_this->m_edit_macro) weak_this->m_edit_macro->Enable(weak_this->m_may_manage_spools && !weak_this->m_macros.empty());
+                if (weak_this->m_add_spool) weak_this->m_add_spool->Enable(weak_this->m_may_manage_spools);
+                if (weak_this->m_edit_spool) weak_this->m_edit_spool->Enable(weak_this->m_may_manage_spools && !weak_this->m_spool_rows.empty());
+                if (weak_this->m_create_klipper_backup) weak_this->m_create_klipper_backup->Enable(weak_this->m_may_manage_spools);
+                if (weak_this->m_compare_klipper_backups) weak_this->m_compare_klipper_backups->Enable(weak_this->m_may_manage_spools);
                 if (weak_this->m_send_command) weak_this->m_send_command->Enable(may_control);
                 if (weak_this->m_simulate_command) weak_this->m_simulate_command->Enable(may_control);
                 if (weak_this->m_cancel_queued_command) weak_this->m_cancel_queued_command->Enable(may_control);
@@ -790,9 +1077,10 @@ void QidiAdminDialog::refresh_macros()
     if (m_macro_request)
         return;
     wxWeakRef<QidiAdminDialog> weak_this(this);
-    m_macro_request = QidiAdminGateway::fetch_macros(connection(), [weak_this](QidiAdminResult result) {
-        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
-            if (!weak_this)
+    const auto generation = m_access_generation;
+    m_macro_request = QidiAdminGateway::fetch_macros(connection(), [weak_this, generation](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, generation, result = std::move(result)]() {
+            if (!weak_this || generation != weak_this->m_access_generation)
                 return;
             weak_this->m_macro_request.reset();
             if (!result.ok)
@@ -805,13 +1093,16 @@ void QidiAdminDialog::refresh_macros()
                 weak_this->m_macro_choice->Clear();
                 for (const auto& item : payload) {
                     ServerMacro macro;
+                    macro.id = item.value("id", 0);
                     macro.name = wx_from_utf8(item.value("name", "Unnamed macro"));
                     macro.description = wx_from_utf8(item.value("description", ""));
                     macro.script = item.value("script", "");
-                    macro.requires_confirmation = item.value("requires_confirmation", true);
+                    macro.requires_confirmation = item.value("requires_confirmation", 1) != 0;
+                    macro.tags_json = item.value("tags_json", "[]");
                     if (!macro.script.empty())
                         weak_this->m_macros.emplace_back(std::move(macro));
                 }
+                weak_this->m_edit_macro->Enable(weak_this->m_may_manage_spools && !weak_this->m_macros.empty());
                 if (weak_this->m_macros.empty()) {
                     weak_this->m_macro_choice->Append(_L("No server macros"));
                     weak_this->m_macro_choice->SetSelection(0);
@@ -827,6 +1118,83 @@ void QidiAdminDialog::refresh_macros()
             }
         });
     });
+}
+
+void QidiAdminDialog::edit_macro(bool create_new)
+{
+    if (m_macro_write_request || !m_may_manage_spools)
+        return;
+    ServerMacro original;
+    if (!create_new) {
+        const int selection = m_macro_choice->GetSelection();
+        if (selection == wxNOT_FOUND || static_cast<size_t>(selection) >= m_macros.size()) {
+            m_status->SetLabel(_L("Choose a macro to edit."));
+            return;
+        }
+        original = m_macros[selection];
+    }
+    wxDialog dialog(this, wxID_ANY, create_new ? _L("Add server macro") : _L("Edit server macro"),
+        wxDefaultPosition, FromDIP(wxSize(540, 440)), wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+    auto* outer = new wxBoxSizer(wxVERTICAL);
+    outer->Add(new wxStaticText(&dialog, wxID_ANY, _L("Name")), 0, wxLEFT | wxRIGHT | wxTOP, FromDIP(12));
+    auto* name = new wxTextCtrl(&dialog, wxID_ANY, original.name);
+    outer->Add(name, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(12));
+    outer->Add(new wxStaticText(&dialog, wxID_ANY, _L("Description")), 0, wxLEFT | wxRIGHT, FromDIP(12));
+    auto* description = new wxTextCtrl(&dialog, wxID_ANY, original.description);
+    outer->Add(description, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(12));
+    outer->Add(new wxStaticText(&dialog, wxID_ANY, _L("G-code script")), 0, wxLEFT | wxRIGHT, FromDIP(12));
+    auto* script = new wxTextCtrl(&dialog, wxID_ANY, wx_from_utf8(original.script),
+        wxDefaultPosition, FromDIP(wxSize(480, 170)), wxTE_MULTILINE);
+    outer->Add(script, 1, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(12));
+    auto* confirmation = new wxCheckBox(&dialog, wxID_ANY, _L("Confirm before running"));
+    confirmation->SetValue(original.requires_confirmation);
+    outer->Add(confirmation, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(12));
+    outer->Add(dialog.CreateButtonSizer(wxOK | wxCANCEL), 0, wxALL | wxALIGN_RIGHT, FromDIP(12));
+    dialog.SetSizerAndFit(outer);
+    wxGetApp().UpdateDarkUIWin(&dialog);
+    if (dialog.ShowModal() != wxID_OK)
+        return;
+    const std::string name_value = utf8_from_wx(name->GetValue());
+    const std::string description_value = utf8_from_wx(description->GetValue());
+    const std::string script_value = utf8_from_wx(script->GetValue());
+    if (name_value.empty() || name_value.size() > 120 || description_value.size() > 500 ||
+        script_value.empty() || script_value.size() > 16384) {
+        wxMessageBox(_L("Macro name and G-code are required; check their lengths."),
+            _L("Invalid macro"), wxOK | wxICON_WARNING, this);
+        return;
+    }
+    nlohmann::json tags = nlohmann::json::array();
+    if (!original.tags_json.empty()) {
+        tags = nlohmann::json::parse(original.tags_json, nullptr, false);
+        if (!tags.is_array())
+            tags = nlohmann::json::array();
+    }
+    const nlohmann::json payload = {
+        {"name", name_value}, {"description", description_value}, {"script", script_value},
+        {"printer_id", "q2"}, {"requires_confirmation", confirmation->GetValue()}, {"tags", tags},
+    };
+    m_add_macro->Disable();
+    m_edit_macro->Disable();
+    const auto generation = m_access_generation;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_macro_write_request = QidiAdminGateway::save_macro(connection(), create_new ? 0 : original.id,
+        payload.dump(), [weak_this, generation](QidiAdminResult result) {
+            wxTheApp->CallAfter([weak_this, generation, result = std::move(result)]() {
+                if (!weak_this)
+                    return;
+                weak_this->m_macro_write_request.reset();
+                if (generation != weak_this->m_access_generation)
+                    return;
+                weak_this->m_add_macro->Enable(weak_this->m_may_manage_spools);
+                weak_this->m_edit_macro->Enable(weak_this->m_may_manage_spools && !weak_this->m_macros.empty());
+                if (!result.ok) {
+                    weak_this->m_status->SetLabel(wxString::Format(_L("Could not save macro: HTTP %u"), result.status));
+                    return;
+                }
+                weak_this->m_status->SetLabel(_L("Macro saved on Raspberry."));
+                weak_this->refresh_macros();
+            });
+        });
 }
 
 void QidiAdminDialog::run_selected_macro()
@@ -848,21 +1216,44 @@ void QidiAdminDialog::refresh_materials()
     if (m_material_request)
         return;
     wxWeakRef<QidiAdminDialog> weak_this(this);
-    m_material_request = QidiAdminGateway::fetch_materials(connection(), [weak_this](QidiAdminResult result) {
-        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
-            if (!weak_this)
+    const auto generation = m_access_generation;
+    m_material_request = QidiAdminGateway::fetch_materials(connection(), [weak_this, generation](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, generation, result = std::move(result)]() {
+            if (!weak_this || generation != weak_this->m_access_generation)
                 return;
             weak_this->m_material_request.reset();
-            if (!result.ok)
+            if (!result.ok) {
+                weak_this->m_material->SetLabel(_L("Material: Raspberry catalog unavailable."));
                 return;
+            }
             try {
                 const auto spools = nlohmann::json::parse(result.body);
-                if (!spools.is_array() || spools.empty()) {
+                if (!spools.is_array())
+                    throw std::runtime_error("Spool catalog is not an array");
+                const int previous_selection = weak_this->m_spool_list->GetSelection();
+                weak_this->m_spool_rows.clear();
+                weak_this->m_spool_list->Clear();
+                for (const auto& spool : spools) {
+                    if (!spool.is_object())
+                        continue;
+                    const bool active = spool.value("active", 0) != 0;
+                    const wxString name = wx_from_utf8(spool.value("name", "Unknown spool"));
+                    const wxString type = wx_from_utf8(spool.value("material_type", ""));
+                    const double weight = spool.value("remaining_weight_g", 0.0);
+                    weak_this->m_spool_list->Append(wxString::Format(
+                        _L("%s%s · %s · %.0f g"), active ? _L("● ") : wxString(), name, type, weight));
+                    weak_this->m_spool_rows.emplace_back(spool.dump());
+                }
+                if (previous_selection != wxNOT_FOUND &&
+                    static_cast<size_t>(previous_selection) < weak_this->m_spool_rows.size())
+                    weak_this->m_spool_list->SetSelection(previous_selection);
+                weak_this->m_edit_spool->Enable(weak_this->m_may_manage_spools && !weak_this->m_spool_rows.empty());
+                if (spools.empty()) {
                     weak_this->m_material->SetLabel(_L("Material: no active spool configured."));
                     return;
                 }
                 const auto active = std::find_if(spools.begin(), spools.end(), [](const auto& spool) {
-                    return spool.value("active", false);
+                    return spool.is_object() && spool.value("active", 0) != 0;
                 });
                 const auto& spool = active == spools.end() ? spools.front() : *active;
                 const wxString name = wx_from_utf8(spool.value("name", "Unknown spool"));
@@ -872,6 +1263,101 @@ void QidiAdminDialog::refresh_materials()
             } catch (const std::exception&) {
                 weak_this->m_material->SetLabel(_L("Material: response could not be parsed."));
             }
+        });
+    });
+}
+
+void QidiAdminDialog::edit_spool(bool create_new)
+{
+    if (m_spool_write_request || !m_may_manage_spools)
+        return;
+    nlohmann::json original = nlohmann::json::object();
+    if (!create_new) {
+        const int selection = m_spool_list->GetSelection();
+        if (selection == wxNOT_FOUND || static_cast<size_t>(selection) >= m_spool_rows.size()) {
+            m_material->SetLabel(_L("Select a spool to edit."));
+            return;
+        }
+        try {
+            original = nlohmann::json::parse(m_spool_rows[selection]);
+        } catch (const std::exception&) {
+            m_material->SetLabel(_L("Selected spool could not be parsed."));
+            return;
+        }
+    }
+    wxDialog dialog(this, wxID_ANY, create_new ? _L("Add spool") : _L("Edit spool"),
+        wxDefaultPosition, FromDIP(wxSize(440, 390)), wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+    auto* outer = new wxBoxSizer(wxVERTICAL);
+    auto* form = new wxFlexGridSizer(2, FromDIP(8), FromDIP(12));
+    form->AddGrowableCol(1, 1);
+    auto add_field = [&](const wxString& label, const wxString& value) {
+        form->Add(new wxStaticText(&dialog, wxID_ANY, label), 0, wxALIGN_CENTER_VERTICAL);
+        auto* field = new wxTextCtrl(&dialog, wxID_ANY, value);
+        form->Add(field, 1, wxEXPAND);
+        return field;
+    };
+    auto* name = add_field(_L("Name"), wx_from_utf8(original.value("name", "")));
+    auto* material_type = add_field(_L("Material (PLA/PETG/…)"), wx_from_utf8(original.value("material_type", "")));
+    auto* slot = add_field(_L("Slot"), wx_from_utf8(original.value("slot", "")));
+    auto* initial = add_field(_L("Initial weight, g"), wxString::Format("%.2f", original.value("initial_weight_g", 1000.0)));
+    auto* remaining = add_field(_L("Remaining weight, g"), wxString::Format("%.2f", original.value("remaining_weight_g", 1000.0)));
+    auto* price = add_field(_L("Spool price"), wxString::Format("%.2f", original.value("price", 0.0)));
+    form->Add(new wxStaticText(&dialog, wxID_ANY, _L("Active for Q2")), 0, wxALIGN_CENTER_VERTICAL);
+    auto* active = new wxCheckBox(&dialog, wxID_ANY, wxEmptyString);
+    active->SetValue(original.value("active", 0) != 0);
+    form->Add(active, 0);
+    outer->Add(form, 1, wxALL | wxEXPAND, FromDIP(16));
+    outer->Add(dialog.CreateButtonSizer(wxOK | wxCANCEL), 0, wxALL | wxALIGN_RIGHT, FromDIP(12));
+    dialog.SetSizerAndFit(outer);
+    wxGetApp().UpdateDarkUIWin(&dialog);
+    if (dialog.ShowModal() != wxID_OK)
+        return;
+
+    double initial_g = 0.0, remaining_g = 0.0, spool_price = 0.0;
+    if (name->GetValue().Trim().empty() || material_type->GetValue().Trim().empty() ||
+        !initial->GetValue().ToDouble(&initial_g) || !remaining->GetValue().ToDouble(&remaining_g) ||
+        !price->GetValue().ToDouble(&spool_price) || initial_g <= 0.0 || initial_g > 100000.0 ||
+        remaining_g < 0.0 || remaining_g > initial_g || spool_price < 0.0 || spool_price > 1000000.0) {
+        wxMessageBox(_L("Check the name, material and weights. Remaining weight must not exceed initial weight."),
+            _L("Invalid spool"), wxOK | wxICON_WARNING, this);
+        return;
+    }
+    const std::string id = create_new
+        ? "spool-" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count())
+        : original.value("id", "");
+    nlohmann::json metadata = nlohmann::json::object();
+    if (!create_new && original.contains("metadata_json") && original["metadata_json"].is_string()) {
+        metadata = nlohmann::json::parse(original["metadata_json"].get<std::string>(), nullptr, false);
+        if (!metadata.is_object())
+            metadata = nlohmann::json::object();
+    }
+    const nlohmann::json payload = {
+        {"id", id}, {"printer_id", "q2"}, {"slot", utf8_from_wx(slot->GetValue())},
+        {"name", utf8_from_wx(name->GetValue())}, {"material_type", utf8_from_wx(material_type->GetValue())},
+        {"color_value", original.value("color_value", 0)}, {"initial_weight_g", initial_g},
+        {"remaining_weight_g", remaining_g}, {"price", spool_price}, {"active", active->GetValue()},
+        {"metadata", metadata},
+    };
+    m_add_spool->Disable();
+    m_edit_spool->Disable();
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    const auto generation = m_access_generation;
+    m_spool_write_request = QidiAdminGateway::upsert_spool(connection(), id, payload.dump(), [weak_this, generation](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, generation, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_spool_write_request.reset();
+            if (generation != weak_this->m_access_generation)
+                return;
+            weak_this->m_add_spool->Enable(weak_this->m_may_manage_spools);
+            weak_this->m_edit_spool->Enable(weak_this->m_may_manage_spools && !weak_this->m_spool_rows.empty());
+            if (!result.ok) {
+                weak_this->m_material->SetLabel(wxString::Format(_L("Could not save spool: HTTP %u"), result.status));
+                return;
+            }
+            weak_this->m_material->SetLabel(_L("Spool saved on Raspberry."));
+            weak_this->refresh_materials();
         });
     });
 }

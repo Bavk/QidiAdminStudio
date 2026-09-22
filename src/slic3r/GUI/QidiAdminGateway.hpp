@@ -42,10 +42,24 @@ public:
     // buffering an unbounded multipart response.
     static Http::Ptr fetch_camera_stream_frame(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_materials(const QidiAdminConnection& connection, ResultCallback callback);
+    static Http::Ptr upsert_spool(const QidiAdminConnection& connection,
+                                  const std::string& spool_id,
+                                  const std::string& json_body,
+                                  ResultCallback callback);
     static Http::Ptr fetch_macros(const QidiAdminConnection& connection, ResultCallback callback);
+    static Http::Ptr save_macro(const QidiAdminConnection& connection,
+                                 int macro_id,
+                                 const std::string& json_body,
+                                 ResultCallback callback);
     static Http::Ptr fetch_maintenance_tasks(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_print_history(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_diagnostics(const QidiAdminConnection& connection, ResultCallback callback);
+    static Http::Ptr create_klipper_backup(const QidiAdminConnection& connection, ResultCallback callback);
+    static Http::Ptr fetch_klipper_backups(const QidiAdminConnection& connection, ResultCallback callback);
+    static Http::Ptr diff_klipper_backups(const QidiAdminConnection& connection,
+                                          const std::string& before,
+                                          const std::string& after,
+                                          ResultCallback callback);
     static Http::Ptr fetch_events(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_access_role(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_command_queue(const QidiAdminConnection& connection, ResultCallback callback);

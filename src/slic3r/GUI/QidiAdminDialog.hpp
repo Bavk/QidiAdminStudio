@@ -33,10 +33,12 @@ public:
 
 private:
     struct ServerMacro {
+        int id {0};
         wxString name;
         wxString description;
         std::string script;
         bool requires_confirmation {true};
+        std::string tags_json;
     };
     struct CommandHistoryEntry {
         wxString script;
@@ -50,10 +52,15 @@ private:
     void                check_connection();
     void                refresh_status(bool announce = false);
     void                refresh_materials();
+    void                edit_spool(bool create_new);
     void                refresh_macros();
+    void                edit_macro(bool create_new);
     void                refresh_maintenance();
     void                refresh_print_history();
     void                refresh_diagnostics();
+    void                show_diagnostics_details();
+    void                create_klipper_backup();
+    void                compare_klipper_backups();
     void                refresh_events();
     void                refresh_access_role();
     void                invalidate_access_role();
@@ -80,9 +87,15 @@ private:
     wxCheckBox*         m_verify_tls {nullptr};
     wxStaticText*       m_status {nullptr};
     wxStaticText*       m_material {nullptr};
+    wxListBox*          m_spool_list {nullptr};
+    wxButton*           m_add_spool {nullptr};
+    wxButton*           m_edit_spool {nullptr};
     wxStaticText*       m_maintenance {nullptr};
     wxStaticText*       m_history {nullptr};
     wxStaticText*       m_diagnostics {nullptr};
+    wxButton*           m_diagnostics_details {nullptr};
+    wxButton*           m_create_klipper_backup {nullptr};
+    wxButton*           m_compare_klipper_backups {nullptr};
     wxStaticText*       m_event {nullptr};
     wxStaticText*       m_access_role {nullptr};
     wxListBox*          m_queue {nullptr};
@@ -97,6 +110,8 @@ private:
     wxButton*           m_resume {nullptr};
     wxButton*           m_stop {nullptr};
     wxButton*           m_run_macro {nullptr};
+    wxButton*           m_add_macro {nullptr};
+    wxButton*           m_edit_macro {nullptr};
     wxButton*           m_send_command {nullptr};
     wxButton*           m_simulate_command {nullptr};
     wxButton*           m_cancel_queued_command {nullptr};
@@ -104,10 +119,13 @@ private:
     Http::Ptr           m_pending_request;
     Http::Ptr           m_status_request;
     Http::Ptr           m_material_request;
+    Http::Ptr           m_spool_write_request;
     Http::Ptr           m_macro_request;
+    Http::Ptr           m_macro_write_request;
     Http::Ptr           m_maintenance_request;
     Http::Ptr           m_history_request;
     Http::Ptr           m_diagnostics_request;
+    Http::Ptr           m_klipper_backup_request;
     Http::Ptr           m_events_request;
     Http::Ptr           m_access_role_request;
     Http::Ptr           m_queue_request;
@@ -123,9 +141,13 @@ private:
     double              m_camera_fps {0.0};
     unsigned long long  m_camera_generation {0};
     unsigned long long  m_access_generation {0};
+    bool                m_may_control {false};
+    bool                m_may_manage_spools {false};
     std::vector<ServerMacro> m_macros;
+    std::vector<std::string> m_spool_rows;
     std::vector<int>    m_queue_command_ids;
     std::vector<wxString> m_command_responses;
+    std::string         m_diagnostics_json;
     std::vector<CommandHistoryEntry> m_command_history_entries;
 };
 

@@ -134,9 +134,64 @@ Http::Ptr QidiAdminGateway::fetch_materials(const QidiAdminConnection& connectio
     return request(connection, "/api/v1/materials/spools?printer_id=q2", nullptr, std::move(callback));
 }
 
+Http::Ptr QidiAdminGateway::upsert_spool(const QidiAdminConnection& connection,
+                                         const std::string& spool_id,
+                                         const std::string& json_body,
+                                         ResultCallback callback)
+{
+    if (!is_valid_endpoint(connection.endpoint) || spool_id.empty() || json_body.empty()) {
+        callback({false, 0, {}, "Spool or Raspberry connection settings are incomplete."});
+        return nullptr;
+    }
+    auto callback_holder = std::make_shared<ResultCallback>(std::move(callback));
+    Http request = Http::put2(normalized_endpoint(connection.endpoint) +
+        "/api/v1/materials/spools/" + Http::url_encode(spool_id));
+    request.timeout_connect(5).timeout_max(20).tls_verify(connection.verify_tls);
+    if (!connection.api_key.empty())
+        request.header("X-Api-Key", connection.api_key);
+    request.header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .set_post_body(json_body)
+        .on_complete([callback_holder](std::string body, unsigned status) {
+            (*callback_holder)({status >= 200 && status < 300, status, std::move(body), {}});
+        })
+        .on_error([callback_holder](std::string body, std::string error, unsigned status) {
+            (*callback_holder)({false, status, std::move(body), std::move(error)});
+        });
+    return request.perform();
+}
+
 Http::Ptr QidiAdminGateway::fetch_macros(const QidiAdminConnection& connection, ResultCallback callback)
 {
     return request(connection, "/api/v1/macros?printer_id=q2", nullptr, std::move(callback));
+}
+
+Http::Ptr QidiAdminGateway::save_macro(const QidiAdminConnection& connection,
+                                       int macro_id,
+                                       const std::string& json_body,
+                                       ResultCallback callback)
+{
+    if (!is_valid_endpoint(connection.endpoint) || macro_id < 0 || json_body.empty()) {
+        callback({false, 0, {}, "Macro or Raspberry connection settings are incomplete."});
+        return nullptr;
+    }
+    const std::string url = normalized_endpoint(connection.endpoint) + "/api/v1/macros" +
+        (macro_id > 0 ? "/" + std::to_string(macro_id) : "");
+    auto callback_holder = std::make_shared<ResultCallback>(std::move(callback));
+    Http request = macro_id > 0 ? Http::put2(url) : Http::post(url);
+    request.timeout_connect(5).timeout_max(20).tls_verify(connection.verify_tls);
+    if (!connection.api_key.empty())
+        request.header("X-Api-Key", connection.api_key);
+    request.header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .set_post_body(json_body)
+        .on_complete([callback_holder](std::string body, unsigned status) {
+            (*callback_holder)({status >= 200 && status < 300, status, std::move(body), {}});
+        })
+        .on_error([callback_holder](std::string body, std::string error, unsigned status) {
+            (*callback_holder)({false, status, std::move(body), std::move(error)});
+        });
+    return request.perform();
 }
 
 Http::Ptr QidiAdminGateway::fetch_maintenance_tasks(const QidiAdminConnection& connection, ResultCallback callback)
@@ -152,6 +207,31 @@ Http::Ptr QidiAdminGateway::fetch_print_history(const QidiAdminConnection& conne
 Http::Ptr QidiAdminGateway::fetch_diagnostics(const QidiAdminConnection& connection, ResultCallback callback)
 {
     return request(connection, "/api/v1/diagnostics", nullptr, std::move(callback));
+}
+
+Http::Ptr QidiAdminGateway::create_klipper_backup(const QidiAdminConnection& connection, ResultCallback callback)
+{
+    static const std::string empty_body = "{}";
+    return request(connection, "/api/v1/backup/klipper/printer.cfg", &empty_body, std::move(callback));
+}
+
+Http::Ptr QidiAdminGateway::fetch_klipper_backups(const QidiAdminConnection& connection, ResultCallback callback)
+{
+    return request(connection, "/api/v1/backup/klipper", nullptr, std::move(callback));
+}
+
+Http::Ptr QidiAdminGateway::diff_klipper_backups(const QidiAdminConnection& connection,
+                                                  const std::string& before,
+                                                  const std::string& after,
+                                                  ResultCallback callback)
+{
+    if (before.empty() || after.empty()) {
+        callback({false, 0, {}, "Select two Klipper backups to compare."});
+        return nullptr;
+    }
+    const std::string path = "/api/v1/backup/klipper/diff?before=" + Http::url_encode(before) +
+        "&after=" + Http::url_encode(after);
+    return request(connection, path, nullptr, std::move(callback));
 }
 
 Http::Ptr QidiAdminGateway::fetch_events(const QidiAdminConnection& connection, ResultCallback callback)
