@@ -68,6 +68,7 @@ private:
                                      const std::string& queue_group = "Qidi Admin Studio");
     void                refresh_camera();
     void                refresh_camera_snapshot();
+    void                save_camera_snapshot();
     void                show_camera_frame(const QidiAdminResult& result);
     void                show_result(const QidiAdminResult& result);
 
@@ -90,6 +91,7 @@ private:
     wxChoice*           m_macro_choice {nullptr};
     wxStaticBitmap*     m_camera {nullptr};
     wxStaticText*       m_camera_status {nullptr};
+    wxButton*           m_save_camera_snapshot {nullptr};
     wxButton*           m_check {nullptr};
     wxButton*           m_pause {nullptr};
     wxButton*           m_resume {nullptr};
@@ -113,6 +115,7 @@ private:
     Http::Ptr           m_queue_cancel_request;
     Http::Ptr           m_queue_retry_request;
     Http::Ptr           m_camera_request;
+    Http::Ptr           m_snapshot_save_request;
     Http::Ptr           m_simulation_request;
     wxTimer             m_camera_timer;
     int                 m_refresh_ticks {0};

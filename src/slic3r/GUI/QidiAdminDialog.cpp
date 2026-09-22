@@ -15,6 +15,7 @@
 #include <wx/statbmp.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+#include <wx/wfstream.h>
 
 #include <nlohmann/json.hpp>
 
@@ -137,6 +138,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     layout->Add(m_camera, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_CENTER_HORIZONTAL, FromDIP(16));
     m_camera_status = new wxStaticText(content, wxID_ANY, _L("Live camera: waiting for first frame…"));
     layout->Add(m_camera_status, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_CENTER_HORIZONTAL, FromDIP(16));
+    m_save_camera_snapshot = new wxButton(content, wxID_ANY, _L("Save full-resolution snapshot…"));
+    layout->Add(m_save_camera_snapshot, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_CENTER_HORIZONTAL, FromDIP(16));
 
     auto* quick_actions = new wxBoxSizer(wxHORIZONTAL);
     m_pause = new wxButton(content, wxID_ANY, _L("Pause"));
@@ -240,6 +243,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     });
     m_run_macro->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { run_selected_macro(); });
     m_simulate_command->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { simulate_command(); });
+    m_save_camera_snapshot->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { save_camera_snapshot(); });
     m_command_log->Bind(wxEVT_LISTBOX, [this](wxCommandEvent&) {
         const int selection = m_command_log->GetSelection();
         if (m_command_response == nullptr)
@@ -351,6 +355,8 @@ QidiAdminDialog::~QidiAdminDialog()
         m_queue_retry_request->cancel();
     if (m_camera_request)
         m_camera_request->cancel();
+    if (m_snapshot_save_request)
+        m_snapshot_save_request->cancel();
     if (m_simulation_request)
         m_simulation_request->cancel();
 }
@@ -967,6 +973,48 @@ void QidiAdminDialog::refresh_camera_snapshot()
             if (!weak_this->m_camera_timer.IsRunning())
                 return;
             weak_this->show_camera_frame(result);
+        });
+    });
+}
+
+void QidiAdminDialog::save_camera_snapshot()
+{
+    if (m_snapshot_save_request)
+        return;
+    if (!QidiAdminGateway::is_valid_endpoint(connection().endpoint)) {
+        m_camera_status->SetLabel(_L("Configure the Raspberry server before saving a snapshot."));
+        return;
+    }
+    m_save_camera_snapshot->Disable();
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_snapshot_save_request = QidiAdminGateway::fetch_camera_snapshot(connection(), [weak_this](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_snapshot_save_request.reset();
+            weak_this->m_save_camera_snapshot->Enable();
+            if (!result.ok || result.body.empty()) {
+                weak_this->m_camera_status->SetLabel(_L("Snapshot could not be received from Raspberry."));
+                return;
+            }
+            wxMemoryInputStream stream(result.body.data(), result.body.size());
+            wxImage image(stream, wxBITMAP_TYPE_JPEG);
+            if (!image.IsOk()) {
+                weak_this->m_camera_status->SetLabel(_L("The camera returned an invalid JPEG snapshot."));
+                return;
+            }
+            wxFileDialog dialog(weak_this, _L("Save camera snapshot"), wxEmptyString,
+                "qidi-camera-snapshot.jpg", _L("JPEG image (*.jpg)|*.jpg"),
+                wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+            if (dialog.ShowModal() != wxID_OK)
+                return;
+            wxFileOutputStream file(dialog.GetPath());
+            if (!file.IsOk() || file.Write(result.body.data(), result.body.size()).LastWrite() != result.body.size()) {
+                weak_this->m_camera_status->SetLabel(_L("Could not save the camera snapshot."));
+                return;
+            }
+            weak_this->m_camera_status->SetLabel(wxString::Format(
+                _L("Saved original camera snapshot: %d x %d"), image.GetWidth(), image.GetHeight()));
         });
     });
 }
