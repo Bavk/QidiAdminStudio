@@ -554,6 +554,27 @@ void QidiAdminDialog::refresh_camera()
             if (!weak_this)
                 return;
             weak_this->m_camera_request.reset();
+            // A snapshot remains a useful degraded mode for camera proxies
+            // that do not expose multipart MJPEG to native clients.
+            if (!result.ok) {
+                weak_this->refresh_camera_snapshot();
+                return;
+            }
+            weak_this->show_camera_frame(result);
+        });
+    });
+}
+
+void QidiAdminDialog::refresh_camera_snapshot()
+{
+    if (m_camera_request || !m_camera)
+        return;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_camera_request = QidiAdminGateway::fetch_camera_snapshot(connection(), [weak_this](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_camera_request.reset();
             weak_this->show_camera_frame(result);
         });
     });

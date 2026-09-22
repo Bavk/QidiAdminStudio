@@ -52,6 +52,7 @@ private:
     void                run_selected_macro();
     void                send_command(const std::string& script, int priority, const wxString& action);
     void                refresh_camera();
+    void                refresh_camera_snapshot();
     void                show_camera_frame(const QidiAdminResult& result);
     void                show_result(const QidiAdminResult& result);
 
