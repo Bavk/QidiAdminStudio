@@ -22,7 +22,9 @@ on:
 
 concurrency:
   group: qidi-admin-studio-windows-${{ github.ref }}
-  cancel-in-progress: true
+  # Native Orca builds take time. Keep an already-running verification alive;
+  # newer integration commits queue behind it instead of discarding evidence.
+  cancel-in-progress: false
 
 jobs:
   windows_x64:
