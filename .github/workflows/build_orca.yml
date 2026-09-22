@@ -54,12 +54,21 @@ jobs:
           fail-on-cache-miss: true
 
       - uses: lukka/get-cmake@latest
-        # The windows-11-arm runner needs CMake <= 3.31 (handled in the next step).
-        if: ${{ !(runner.os == 'Windows' && inputs.arch == 'arm64') }}
+        # GitHub Windows images already ship CMake. Fetching another copy here
+        # has intermittently stalled a release runner for hours, before any
+        # source is compiled. ARM64 is handled by the pinned step below.
+        if: runner.os != 'Windows'
         with:
           cmakeVersion: "~4.3.0"  # use most recent 4.3.x version
           useLocalCache: true         # <--= Use the local cache (default is 'false').
           useCloudCache: true
+
+      - name: Verify bundled CMake (Windows x64)
+        if: runner.os == 'Windows' && inputs.arch == 'x64'
+        shell: pwsh
+        run: |
+          $version = (& cmake --version | Select-Object -First 1)
+          Write-Output "Using runner-provided $version"
 
       - name: Install CMake 3.31.x (Windows ARM64)
         # windows-11-arm ships CMake 4.x, which removed pre-3.5 policy
