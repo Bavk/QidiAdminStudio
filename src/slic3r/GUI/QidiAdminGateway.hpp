@@ -36,10 +36,15 @@ public:
     // These operations are asynchronous. Keep the returned request alive when
     // cancellation from a UI owner is needed.
     static Http::Ptr fetch_status(const QidiAdminConnection& connection, ResultCallback callback);
+    static Http::Ptr fetch_camera_snapshot(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr preflight(const QidiAdminConnection& connection,
                                const std::string& filename,
                                const std::string& printer_id,
                                ResultCallback callback);
+    static Http::Ptr enqueue_command(const QidiAdminConnection& connection,
+                                     const std::string& script,
+                                     int priority,
+                                     ResultCallback callback);
 
 private:
     static Http::Ptr request(const QidiAdminConnection& connection,

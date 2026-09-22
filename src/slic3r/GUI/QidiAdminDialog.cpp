@@ -2,18 +2,22 @@
 
 #include <wx/button.h>
 #include <wx/checkbox.h>
+#include <wx/mstream.h>
 #include <wx/sizer.h>
+#include <wx/statbmp.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 
 #include "GUI_App.hpp"
 #include "I18N.hpp"
+#include "QidiAdminCredentials.hpp"
 #include "libslic3r/AppConfig.hpp"
 
 namespace Slic3r::GUI {
 
 QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     : DPIDialog(parent, wxID_ANY, _L("Qidi Admin Server"), wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
+    , m_camera_timer(this)
 {
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(new wxStaticText(this, wxID_ANY, _L("Connect Orca prepare and preview to your Raspberry Qidi Admin Server.")), 0, wxALL, FromDIP(16));
@@ -25,8 +29,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_endpoint->SetHint("https://morrax3d.ru");
     form->Add(m_endpoint, 1, wxEXPAND);
     form->Add(new wxStaticText(this, wxID_ANY, _L("API key")), 0, wxALIGN_CENTER_VERTICAL);
-    m_api_key = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxTE_PASSWORD);
-    m_api_key->SetHint(_L("Entered for this session only"));
+    m_api_key = new wxTextCtrl(this, wxID_ANY, from_u8(QidiAdminCredentials::load_api_key()), wxDefaultPosition, wxDefaultSize, wxTE_PASSWORD);
+    m_api_key->SetHint(_L("Stored in Windows Credential Manager"));
     form->Add(m_api_key, 1, wxEXPAND);
     layout->Add(form, 1, wxLEFT | wxRIGHT | wxEXPAND, FromDIP(16));
 
@@ -36,6 +40,19 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
 
     m_status = new wxStaticText(this, wxID_ANY, _L("Not checked yet."));
     layout->Add(m_status, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+
+    m_camera = new wxStaticBitmap(this, wxID_ANY, wxNullBitmap, wxDefaultPosition, FromDIP(wxSize(480, 270)));
+    m_camera->SetMinSize(FromDIP(wxSize(480, 270)));
+    layout->Add(m_camera, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_CENTER_HORIZONTAL, FromDIP(16));
+
+    auto* quick_actions = new wxBoxSizer(wxHORIZONTAL);
+    m_pause = new wxButton(this, wxID_ANY, _L("Pause"));
+    m_resume = new wxButton(this, wxID_ANY, _L("Resume"));
+    m_stop = new wxButton(this, wxID_ANY, _L("Emergency stop"));
+    quick_actions->Add(m_pause, 0, wxRIGHT, FromDIP(8));
+    quick_actions->Add(m_resume, 0, wxRIGHT, FromDIP(8));
+    quick_actions->Add(m_stop, 0);
+    layout->Add(quick_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
 
     auto* buttons = new wxStdDialogButtonSizer();
     m_check = new wxButton(this, wxID_ANY, _L("Check server"));
@@ -49,8 +66,23 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     CentreOnParent();
 
     m_check->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { check_connection(); });
+    m_pause->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { send_command("PAUSE", 80, _L("Pause")); });
+    m_resume->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { send_command("RESUME", 80, _L("Resume")); });
+    m_stop->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        if (wxMessageBox(_L("Immediately stop the printer?"), _L("Emergency stop"), wxYES_NO | wxICON_WARNING, this) == wxYES)
+            send_command("M112", 100, _L("Emergency stop"));
+    });
     Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { save_connection(); EndModal(wxID_OK); }, wxID_OK);
+    Bind(wxEVT_TIMER, [this](wxTimerEvent&) { refresh_camera(); }, m_camera_timer.GetId());
+    m_camera_timer.Start(500);
     wxGetApp().UpdateDlgDarkUI(this);
+}
+
+QidiAdminDialog::~QidiAdminDialog()
+{
+    m_camera_timer.Stop();
+    if (m_camera_request)
+        m_camera_request->cancel();
 }
 
 QidiAdminConnection QidiAdminDialog::connection() const
@@ -63,7 +95,7 @@ void QidiAdminDialog::save_connection()
     const QidiAdminConnection value = connection();
     wxGetApp().app_config->set("qidi_admin", "endpoint", QidiAdminGateway::normalized_endpoint(value.endpoint));
     wxGetApp().app_config->set("qidi_admin", "verify_tls", value.verify_tls ? "true" : "false");
-    // API keys are intentionally not written to the slicer configuration.
+    QidiAdminCredentials::save_api_key(value.api_key);
 }
 
 void QidiAdminDialog::check_connection()
@@ -80,6 +112,52 @@ void QidiAdminDialog::check_connection()
     });
     if (!m_pending_request)
         show_result({false, 0, {}, _L("Connection settings are incomplete.").ToUTF8().data()});
+}
+
+void QidiAdminDialog::send_command(const std::string& script, int priority, const wxString& action)
+{
+    m_status->SetLabel(wxString::Format(_L("Sending: %s…"), action));
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_pending_request = QidiAdminGateway::enqueue_command(connection(), script, priority, [weak_this, action](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, action, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            if (result.ok)
+                weak_this->m_status->SetLabel(wxString::Format(_L("%s queued on Raspberry."), action));
+            else
+                weak_this->show_result(result);
+        });
+    });
+}
+
+void QidiAdminDialog::refresh_camera()
+{
+    if (m_camera_request || !m_camera)
+        return;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_camera_request = QidiAdminGateway::fetch_camera_snapshot(connection(), [weak_this](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_camera_request.reset();
+            weak_this->show_camera_frame(result);
+        });
+    });
+}
+
+void QidiAdminDialog::show_camera_frame(const QidiAdminResult& result)
+{
+    if (!result.ok || result.body.empty())
+        return;
+    wxMemoryInputStream stream(result.body.data(), result.body.size());
+    wxImage image(stream, wxBITMAP_TYPE_JPEG);
+    if (!image.IsOk())
+        return;
+    const wxSize target = m_camera->GetSize();
+    if (target.x > 0 && target.y > 0)
+        image.Rescale(target.x, target.y, wxIMAGE_QUALITY_HIGH);
+    m_camera->SetBitmap(wxBitmap(image));
+    Layout();
 }
 
 void QidiAdminDialog::show_result(const QidiAdminResult& result)

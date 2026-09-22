@@ -5,6 +5,8 @@
 #include <memory>
 #include <utility>
 
+#include <nlohmann/json.hpp>
+
 namespace Slic3r::GUI {
 namespace {
 
@@ -55,6 +57,30 @@ Http::Ptr QidiAdminGateway::fetch_status(const QidiAdminConnection& connection, 
     return request(connection, "/api/v1/status", nullptr, std::move(callback));
 }
 
+Http::Ptr QidiAdminGateway::fetch_camera_snapshot(const QidiAdminConnection& connection, ResultCallback callback)
+{
+    if (!is_valid_endpoint(connection.endpoint)) {
+        callback({false, 0, {}, "Qidi Admin Server URL must begin with http:// or https:// and contain a host."});
+        return nullptr;
+    }
+    if (connection.api_key.empty()) {
+        callback({false, 0, {}, "Qidi Admin Server API key is empty."});
+        return nullptr;
+    }
+    auto callback_holder = std::make_shared<ResultCallback>(std::move(callback));
+    Http request = Http::get(normalized_endpoint(connection.endpoint) + "/api/v1/camera/snapshot");
+    request.timeout_connect(5).timeout_max(10).tls_verify(connection.verify_tls)
+        .header("X-Api-Key", connection.api_key)
+        .header("Accept", "image/jpeg")
+        .on_complete([callback_holder](std::string body, unsigned status) {
+            (*callback_holder)({status >= 200 && status < 300, status, std::move(body), {}});
+        })
+        .on_error([callback_holder](std::string body, std::string error, unsigned status) {
+            (*callback_holder)({false, status, std::move(body), std::move(error)});
+        });
+    return request.perform();
+}
+
 Http::Ptr QidiAdminGateway::preflight(const QidiAdminConnection& connection,
                                       const std::string& filename,
                                       const std::string& printer_id,
@@ -67,6 +93,25 @@ Http::Ptr QidiAdminGateway::preflight(const QidiAdminConnection& connection,
     const std::string path = "/api/v1/printer/preflight?filename=" + Http::url_encode(filename) +
                              "&printer_id=" + Http::url_encode(printer_id.empty() ? "q2" : printer_id);
     return request(connection, path, nullptr, std::move(callback));
+}
+
+Http::Ptr QidiAdminGateway::enqueue_command(const QidiAdminConnection& connection,
+                                            const std::string& script,
+                                            int priority,
+                                            ResultCallback callback)
+{
+    if (script.empty()) {
+        callback({false, 0, {}, "G-code command is empty."});
+        return nullptr;
+    }
+    const nlohmann::json payload = {
+        {"script", script},
+        {"printer_id", "q2"},
+        {"queue_group", "Qidi Admin Studio"},
+        {"priority", std::clamp(priority, 0, 100)},
+    };
+    const std::string body = payload.dump();
+    return request(connection, "/api/v1/command-queue", &body, std::move(callback));
 }
 
 Http::Ptr QidiAdminGateway::request(const QidiAdminConnection& connection,

@@ -145,6 +145,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/QidiAdminGateway.hpp
     GUI/QidiAdminDialog.cpp
     GUI/QidiAdminDialog.hpp
+    GUI/QidiAdminCredentials.cpp
+    GUI/QidiAdminCredentials.hpp
     GUI/DragCanvas.cpp
     GUI/DragCanvas.hpp
     GUI/EditGCodeDialog.cpp
