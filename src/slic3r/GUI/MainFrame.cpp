@@ -70,6 +70,7 @@
 #include "Widgets/WebView.hpp"
 #include "DailyTips.hpp"
 #include "FilamentMapDialog.hpp"
+#include "QidiAdminDialog.hpp"
 
 #include "DeviceCore/DevManager.h"
 
@@ -2860,6 +2861,17 @@ wxMenu* MainFrame::generate_help_menu()
     return helpMenu;
 }
 
+wxMenu* MainFrame::generate_qidi_admin_menu()
+{
+    auto* menu = new wxMenu();
+    append_menu_item(menu, wxID_ANY, _L("Server connection"), _L("Configure Qidi Admin Server"),
+        [this](wxCommandEvent&) {
+            QidiAdminDialog dialog(this);
+            dialog.ShowModal();
+        });
+    return menu;
+}
+
 
 static void add_common_publish_menu_items(wxMenu* publish_menu, MainFrame* mainFrame)
 {
@@ -3663,6 +3675,7 @@ void MainFrame::init_menubar_as_editor()
         [this]() {return m_plater->is_view3D_shown();; }, this);
 
     m_menubar->Append(calib_menu,wxString::Format("&%s", _L("Calibration")));
+    m_menubar->Append(generate_qidi_admin_menu(), "&Qidi Admin");
     if (helpMenu)
         m_menubar->Append(helpMenu, wxString::Format("&%s", _L("Help")));
     SetMenuBar(m_menubar);

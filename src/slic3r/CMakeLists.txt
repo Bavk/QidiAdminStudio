@@ -143,6 +143,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/PluginWebDialog.hpp
     GUI/QidiAdminGateway.cpp
     GUI/QidiAdminGateway.hpp
+    GUI/QidiAdminDialog.cpp
+    GUI/QidiAdminDialog.hpp
     GUI/DragCanvas.cpp
     GUI/DragCanvas.hpp
     GUI/EditGCodeDialog.cpp

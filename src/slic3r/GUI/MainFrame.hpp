@@ -219,6 +219,7 @@ class MainFrame : public DPIFrame
     bool handle_global_shortcut(const KeyChord& chord);
     void add_common_view_menu_items(wxMenu* view_menu, std::function<bool(void)> can_change_view);
     wxMenu* generate_help_menu();
+    wxMenu* generate_qidi_admin_menu();
 
     struct FileHistory : wxFileHistory
     {
