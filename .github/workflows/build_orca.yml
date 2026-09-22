@@ -112,11 +112,10 @@ jobs:
       # spells it differently on Windows.
       - name: Compiler cache
         id: ccache
-        # GitHub-hosted tokens in this personal fork may not delete the cache
-        # entries created by the upstream ccache action. Disable that optional
-        # optimization until the fork has its own cache maintenance policy;
-        # correctness and artifact generation do not depend on it.
-        if: ${{ false }}
+        # The action only installs/configures ccache. Cache restore/save stays
+        # below with actions/cache, so this fork never delegates cache deletion
+        # or replacement to a third-party action.
+        if: ${{ !inputs.macos-combine-only }}
         continue-on-error: true
         uses: hendrikmuhs/ccache-action@v1.2.24
         with:
@@ -129,7 +128,7 @@ jobs:
 
       - name: Restore compiler cache
         id: ccache_restore
-        if: ${{ false }}
+        if: ${{ !inputs.macos-combine-only }}
         uses: actions/cache/restore@v6
         with:
           path: ${{ github.workspace }}/.ccache
@@ -137,7 +136,7 @@ jobs:
           restore-keys: ccache-${{ env.CCACHE_LEG }}-
 
       - name: Enable compiler cache
-        if: ${{ false }}
+        if: ${{ !inputs.macos-combine-only }}
         shell: bash
         run: |
           echo "CMAKE_C_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
