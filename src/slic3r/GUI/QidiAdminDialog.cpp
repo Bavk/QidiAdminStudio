@@ -61,6 +61,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     layout->Add(m_status, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_material = new wxStaticText(this, wxID_ANY, _L("Material: loading from Raspberry…"));
     layout->Add(m_material, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    m_maintenance = new wxStaticText(this, wxID_ANY, _L("Maintenance: loading from Raspberry…"));
+    layout->Add(m_maintenance, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
 
     auto* macro_row = new wxBoxSizer(wxHORIZONTAL);
     m_macro_choice = new wxChoice(this, wxID_ANY);
@@ -136,6 +138,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
             refresh_materials();
         if (m_refresh_ticks % 20 == 0)
             refresh_macros();
+        if (m_refresh_ticks % 60 == 0)
+            refresh_maintenance();
     }, m_camera_timer.GetId());
     m_camera_timer.Start(500);
     const QidiAdminConnection saved_connection = connection();
@@ -143,6 +147,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         refresh_status();
         refresh_materials();
         refresh_macros();
+        refresh_maintenance();
     }
     wxGetApp().UpdateDlgDarkUI(this);
 }
@@ -158,8 +163,39 @@ QidiAdminDialog::~QidiAdminDialog()
         m_material_request->cancel();
     if (m_macro_request)
         m_macro_request->cancel();
+    if (m_maintenance_request)
+        m_maintenance_request->cancel();
     if (m_camera_request)
         m_camera_request->cancel();
+}
+
+void QidiAdminDialog::refresh_maintenance()
+{
+    if (m_maintenance_request)
+        return;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_maintenance_request = QidiAdminGateway::fetch_maintenance_tasks(connection(), [weak_this](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_maintenance_request.reset();
+            if (!result.ok)
+                return;
+            try {
+                const auto tasks = nlohmann::json::parse(result.body);
+                if (!tasks.is_array() || tasks.empty()) {
+                    weak_this->m_maintenance->SetLabel(_L("Maintenance: no tasks scheduled."));
+                    return;
+                }
+                const auto& next = tasks.front();
+                const wxString title = wx_from_utf8(next.value("title", "Scheduled service"));
+                const int minutes = next.value("estimated_minutes", 0);
+                weak_this->m_maintenance->SetLabel(wxString::Format(_L("Maintenance: %zu tasks · latest: %s (%d min)"), tasks.size(), title, minutes));
+            } catch (const std::exception&) {
+                weak_this->m_maintenance->SetLabel(_L("Maintenance: response could not be parsed."));
+            }
+        });
+    });
 }
 
 void QidiAdminDialog::refresh_macros()

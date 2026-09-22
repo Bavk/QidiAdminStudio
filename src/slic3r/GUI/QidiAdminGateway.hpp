@@ -39,6 +39,7 @@ public:
     static Http::Ptr fetch_camera_snapshot(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_materials(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_macros(const QidiAdminConnection& connection, ResultCallback callback);
+    static Http::Ptr fetch_maintenance_tasks(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr preflight(const QidiAdminConnection& connection,
                                const std::string& filename,
                                const std::string& printer_id,
