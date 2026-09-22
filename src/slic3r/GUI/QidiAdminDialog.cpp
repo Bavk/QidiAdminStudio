@@ -763,8 +763,16 @@ void QidiAdminDialog::show_camera_frame(const QidiAdminResult& result)
     }
     m_camera_last_frame = now;
     const wxSize target = m_camera->GetSize();
-    if (target.x > 0 && target.y > 0)
-        image.Rescale(target.x, target.y, wxIMAGE_QUALITY_HIGH);
+    // Never stretch a camera source. Besides looking wrong, stretching makes
+    // it harder to judge first-layer and nozzle details in the live view.
+    if (target.x > 0 && target.y > 0 && source_width > 0 && source_height > 0) {
+        const double scale = std::min(
+            static_cast<double>(target.x) / static_cast<double>(source_width),
+            static_cast<double>(target.y) / static_cast<double>(source_height));
+        const int scaled_width = std::max(1, static_cast<int>(source_width * scale));
+        const int scaled_height = std::max(1, static_cast<int>(source_height * scale));
+        image.Rescale(scaled_width, scaled_height, wxIMAGE_QUALITY_HIGH);
+    }
     m_camera->SetBitmap(wxBitmap(image));
     if (m_camera_status)
         m_camera_status->SetLabel(wxString::Format(_L("Live camera: %.1f FPS · %d x %d"), m_camera_fps, source_width, source_height));
