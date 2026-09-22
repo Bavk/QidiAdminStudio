@@ -68,6 +68,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     layout->Add(m_history, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_diagnostics = new wxStaticText(this, wxID_ANY, _L("Raspberry health: loading…"));
     layout->Add(m_diagnostics, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    m_event = new wxStaticText(this, wxID_ANY, _L("Server events: loading…"));
+    layout->Add(m_event, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
 
     layout->Add(new wxStaticText(this, wxID_ANY, _L("Raspberry command queue")), 0,
         wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
@@ -198,6 +200,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
             refresh_print_history();
         if (m_refresh_ticks % 60 == 0)
             refresh_diagnostics();
+        if (m_refresh_ticks % 40 == 0)
+            refresh_events();
     }, m_camera_timer.GetId());
     m_camera_timer.Start(250);
     const QidiAdminConnection saved_connection = connection();
@@ -208,6 +212,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         refresh_maintenance();
         refresh_print_history();
         refresh_diagnostics();
+        refresh_events();
         refresh_command_queue();
         refresh_command_history();
     }
@@ -231,6 +236,8 @@ QidiAdminDialog::~QidiAdminDialog()
         m_history_request->cancel();
     if (m_diagnostics_request)
         m_diagnostics_request->cancel();
+    if (m_events_request)
+        m_events_request->cancel();
     if (m_queue_request)
         m_queue_request->cancel();
     if (m_command_history_request)
@@ -466,6 +473,37 @@ void QidiAdminDialog::refresh_diagnostics()
                     camera_ok ? _L("online") : _L("unavailable"), latency));
             } catch (const std::exception&) {
                 weak_this->m_diagnostics->SetLabel(_L("Raspberry health: response could not be parsed."));
+            }
+        });
+    });
+}
+
+void QidiAdminDialog::refresh_events()
+{
+    if (m_events_request)
+        return;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_events_request = QidiAdminGateway::fetch_events(connection(), [weak_this](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_events_request.reset();
+            if (!result.ok)
+                return;
+            try {
+                const auto entries = nlohmann::json::parse(result.body);
+                if (!entries.is_array() || entries.empty()) {
+                    weak_this->m_event->SetLabel(_L("Server events: no recent events."));
+                    return;
+                }
+                const auto& event = entries.front();
+                const wxString severity = wx_from_utf8(event.value("severity", "info"));
+                wxString message = wx_from_utf8(event.value("message", ""));
+                if (message.length() > 110)
+                    message = message.Left(107) + "…";
+                weak_this->m_event->SetLabel(wxString::Format(_L("Latest server event [%s]: %s"), severity, message));
+            } catch (const std::exception&) {
+                weak_this->m_event->SetLabel(_L("Server events: response could not be parsed."));
             }
         });
     });

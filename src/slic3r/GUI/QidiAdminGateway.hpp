@@ -46,6 +46,7 @@ public:
     static Http::Ptr fetch_maintenance_tasks(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_print_history(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_diagnostics(const QidiAdminConnection& connection, ResultCallback callback);
+    static Http::Ptr fetch_events(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_command_queue(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_command_history(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr cancel_queued_command(const QidiAdminConnection& connection, int command_id, ResultCallback callback);
