@@ -260,6 +260,13 @@ Http::Ptr QidiAdminGateway::enqueue_command(const QidiAdminConnection& connectio
     return request(connection, "/api/v1/command-queue", &body, std::move(callback));
 }
 
+Http::Ptr QidiAdminGateway::emergency_stop(const QidiAdminConnection& connection,
+                                           ResultCallback callback)
+{
+    static const std::string empty_body = "{}";
+    return request(connection, "/api/v1/printer/emergency-stop", &empty_body, std::move(callback));
+}
+
 Http::Ptr QidiAdminGateway::simulate_command(const QidiAdminConnection& connection,
                                              const std::string& script,
                                              ResultCallback callback)

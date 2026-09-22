@@ -61,6 +61,10 @@ public:
                                      int priority,
                                      const std::string& queue_group,
                                      ResultCallback callback);
+    // M112 is intentionally direct: unlike normal G-code it must not wait for
+    // an earlier queue item to finish.
+    static Http::Ptr emergency_stop(const QidiAdminConnection& connection,
+                                    ResultCallback callback);
     static Http::Ptr simulate_command(const QidiAdminConnection& connection,
                                       const std::string& script,
                                       ResultCallback callback);

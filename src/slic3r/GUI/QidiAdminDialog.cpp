@@ -203,7 +203,21 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_resume->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { send_command("RESUME", 80, _L("Resume")); });
     m_stop->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
         if (wxMessageBox(_L("Immediately stop the printer?"), _L("Emergency stop"), wxYES_NO | wxICON_WARNING, this) == wxYES)
-            send_command("M112", 100, _L("Emergency stop"));
+        {
+            m_status->SetLabel(_L("Sending emergency stop directly to Raspberry…"));
+            wxWeakRef<QidiAdminDialog> weak_this(this);
+            m_pending_request = QidiAdminGateway::emergency_stop(connection(), [weak_this](QidiAdminResult result) {
+                wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+                    if (!weak_this)
+                        return;
+                    weak_this->m_pending_request.reset();
+                    if (result.ok)
+                        weak_this->m_status->SetLabel(_L("Emergency stop sent to Moonraker."));
+                    else
+                        weak_this->show_result(result);
+                });
+            });
+        }
     });
     m_send_command->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
         const std::string script = utf8_from_wx(m_command->GetValue());
