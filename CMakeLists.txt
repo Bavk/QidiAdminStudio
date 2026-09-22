@@ -319,7 +319,9 @@ endif ()
 
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     message(STATUS "Automatically setting CMAKE_INSTALL_PREFIX")
-    set_property(CACHE CMAKE_INSTALL_PREFIX PROPERTY VALUE "${CMAKE_BINARY_DIR}/OrcaSlicer")
+    # The slicer engine remains Orca-compatible, but the distributable is a
+    # single Qidi Admin Studio application rather than a renamed archive.
+    set_property(CACHE CMAKE_INSTALL_PREFIX PROPERTY VALUE "${CMAKE_BINARY_DIR}/QidiAdminStudio")
 endif()
 
 message(STATUS "CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")

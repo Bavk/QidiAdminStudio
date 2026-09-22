@@ -497,7 +497,7 @@ jobs:
         shell: cmd
         # Shipped into both the already-installed tree (portable zip, MSIX) and
         # the checkout cpack re-installs from when it builds the NSIS installer.
-        run: scripts\build_preset_cache.bat --prune-source "%BUILD_DIR%" "resources\profiles" "%BUILD_DIR%\OrcaSlicer\resources\profiles"
+        run: scripts\build_preset_cache.bat --prune-source "%BUILD_DIR%" "resources\profiles" "%BUILD_DIR%\QidiAdminStudio\resources\profiles"
 
       - name: Pack unit tests Win
         if: ${{ false }} # Test artifact is produced by the dedicated test lane.
@@ -527,7 +527,7 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: ${{ github.workspace }}/${{ env.BUILD_DIR }}
         shell: cmd
-        run: '"C:/Program Files/7-Zip/7z.exe" a -tzip QidiAdminStudio_Windows_${{ env.ver }}${{ env.ARCH_SUFFIX }}_portable.zip ${{ github.workspace }}/${{ env.BUILD_DIR }}/OrcaSlicer'
+        run: '"C:/Program Files/7-Zip/7z.exe" a -tzip QidiAdminStudio_Windows_${{ env.ver }}${{ env.ARCH_SUFFIX }}_portable.zip ${{ github.workspace }}/${{ env.BUILD_DIR }}/QidiAdminStudio'
 
       - name: Pack PDB
         if: runner.os == 'Windows' && inputs.arch != 'arm64' && !vars.SELF_HOSTED
@@ -540,7 +540,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: QidiAdminStudio_Windows_${{ env.ver }}${{ env.ARCH_SUFFIX }}_portable
-          path: ${{ github.workspace }}/${{ env.BUILD_DIR }}/OrcaSlicer
+          path: ${{ github.workspace }}/${{ env.BUILD_DIR }}/QidiAdminStudio
 
       - name: Upload artifacts Win installer
         if: runner.os == 'Windows' && !vars.SELF_HOSTED
@@ -602,7 +602,7 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/msix/build_msix.ps1 `
-            -InstallDir "${{ github.workspace }}/${{ env.BUILD_DIR }}/OrcaSlicer" `
+            -InstallDir "${{ github.workspace }}/${{ env.BUILD_DIR }}/QidiAdminStudio" `
             -OutputPath "${{ github.workspace }}/${{ env.BUILD_DIR }}/OrcaSlicer_Windows_MSIX_${{ env.ver }}${{ env.ARCH_SUFFIX }}.msix" `
             -Architecture "${{ inputs.arch }}" `
             -IdentityName "${{ vars.ORCA_MSIX_IDENTITY_NAME || 'OrcaSlicer.OrcaSlicer' }}" `
