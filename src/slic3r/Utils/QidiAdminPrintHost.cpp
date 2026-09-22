@@ -164,11 +164,10 @@ bool QidiAdminPrintHost::upload(PrintHostUpload upload_data, ProgressFn progress
     }
 
     const auto filename = upload_data.upload_path.filename().string();
-    wxString preflight_error;
-    if (!preflight(preflight_error, filename)) {
-        error_fn(std::move(preflight_error));
-        return false;
-    }
+    // A file does not have Moonraker metadata until it has reached the
+    // Raspberry.  The authoritative preflight is therefore intentionally
+    // performed after upload but before any start request: this lets the
+    // server verify estimated material use, duration and current safety rules.
     bool ok = true;
     std::string stored_filename = filename;
     auto http = Http::post(make_url("/api/v1/files/upload"));
@@ -198,6 +197,12 @@ bool QidiAdminPrintHost::upload(PrintHostUpload upload_data, ProgressFn progress
     if (!ok)
         return false;
     info_fn(_L("Qidi Admin"), _L("G-code uploaded through Raspberry gateway."));
+
+    wxString preflight_error;
+    if (!preflight(preflight_error, stored_filename)) {
+        error_fn(std::move(preflight_error));
+        return false;
+    }
     if (upload_data.post_action != PrintHostPostUploadAction::StartPrint)
         return true;
 
