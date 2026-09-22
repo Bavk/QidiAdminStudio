@@ -7,6 +7,7 @@
 #include <wx/choice.h>
 #include <wx/listbox.h>
 #include <wx/mstream.h>
+#include <wx/scrolwin.h>
 #include <wx/sizer.h>
 #include <wx/statbmp.h>
 #include <wx/stattext.h>
@@ -39,98 +40,104 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     : DPIDialog(parent, wxID_ANY, _L("Qidi Admin Server"), wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
     , m_camera_timer(this)
 {
+    // The administrator contains a live video feed, queues and a terminal.
+    // Keeping it in a scrolled child is essential on laptop screens: wx's
+    // default "fit" behaviour otherwise makes the bottom actions unreachable.
+    auto* root_layout = new wxBoxSizer(wxVERTICAL);
+    auto* content = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL | wxTAB_TRAVERSAL);
+    content->SetScrollRate(0, FromDIP(12));
     auto* layout = new wxBoxSizer(wxVERTICAL);
-    layout->Add(new wxStaticText(this, wxID_ANY, _L("Connect Orca prepare and preview to your Raspberry Qidi Admin Server.")), 0, wxALL, FromDIP(16));
+    layout->Add(new wxStaticText(content, wxID_ANY, _L("Connect Orca prepare and preview to your Raspberry Qidi Admin Server.")), 0, wxALL, FromDIP(16));
 
     auto* form = new wxFlexGridSizer(2, FromDIP(10), FromDIP(10));
     form->AddGrowableCol(1, 1);
-    form->Add(new wxStaticText(this, wxID_ANY, _L("Server URL")), 0, wxALIGN_CENTER_VERTICAL);
-    m_endpoint = new wxTextCtrl(this, wxID_ANY, wx_from_utf8(wxGetApp().app_config->get("qidi_admin", "endpoint")));
+    form->Add(new wxStaticText(content, wxID_ANY, _L("Server URL")), 0, wxALIGN_CENTER_VERTICAL);
+    m_endpoint = new wxTextCtrl(content, wxID_ANY, wx_from_utf8(wxGetApp().app_config->get("qidi_admin", "endpoint")));
     m_endpoint->SetHint("https://morrax3d.ru");
     form->Add(m_endpoint, 1, wxEXPAND);
-    form->Add(new wxStaticText(this, wxID_ANY, _L("API key")), 0, wxALIGN_CENTER_VERTICAL);
-    m_api_key = new wxTextCtrl(this, wxID_ANY, wx_from_utf8(QidiAdminCredentials::load_api_key()), wxDefaultPosition, wxDefaultSize, wxTE_PASSWORD);
+    form->Add(new wxStaticText(content, wxID_ANY, _L("API key")), 0, wxALIGN_CENTER_VERTICAL);
+    m_api_key = new wxTextCtrl(content, wxID_ANY, wx_from_utf8(QidiAdminCredentials::load_api_key()), wxDefaultPosition, wxDefaultSize, wxTE_PASSWORD);
     m_api_key->SetHint(_L("Stored in Windows Credential Manager"));
     form->Add(m_api_key, 1, wxEXPAND);
     layout->Add(form, 1, wxLEFT | wxRIGHT | wxEXPAND, FromDIP(16));
 
-    m_verify_tls = new wxCheckBox(this, wxID_ANY, _L("Verify TLS certificate"));
+    m_verify_tls = new wxCheckBox(content, wxID_ANY, _L("Verify TLS certificate"));
     m_verify_tls->SetValue(wxGetApp().app_config->get("qidi_admin", "verify_tls") != "false");
     layout->Add(m_verify_tls, 0, wxALL, FromDIP(16));
 
-    m_status = new wxStaticText(this, wxID_ANY, _L("Not checked yet."));
+    m_status = new wxStaticText(content, wxID_ANY, _L("Not checked yet."));
     layout->Add(m_status, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
-    m_material = new wxStaticText(this, wxID_ANY, _L("Material: loading from Raspberry…"));
+    m_material = new wxStaticText(content, wxID_ANY, _L("Material: loading from Raspberry…"));
     layout->Add(m_material, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
-    m_maintenance = new wxStaticText(this, wxID_ANY, _L("Maintenance: loading from Raspberry…"));
+    m_maintenance = new wxStaticText(content, wxID_ANY, _L("Maintenance: loading from Raspberry…"));
     layout->Add(m_maintenance, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
-    m_history = new wxStaticText(this, wxID_ANY, _L("Print history: loading from Raspberry…"));
+    m_history = new wxStaticText(content, wxID_ANY, _L("Print history: loading from Raspberry…"));
     layout->Add(m_history, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
-    m_diagnostics = new wxStaticText(this, wxID_ANY, _L("Raspberry health: loading…"));
+    m_diagnostics = new wxStaticText(content, wxID_ANY, _L("Raspberry health: loading…"));
     layout->Add(m_diagnostics, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
-    m_event = new wxStaticText(this, wxID_ANY, _L("Server events: loading…"));
+    m_event = new wxStaticText(content, wxID_ANY, _L("Server events: loading…"));
     layout->Add(m_event, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
-    m_access_role = new wxStaticText(this, wxID_ANY, _L("Access role: checking…"));
+    m_access_role = new wxStaticText(content, wxID_ANY, _L("Access role: checking…"));
     layout->Add(m_access_role, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
 
-    layout->Add(new wxStaticText(this, wxID_ANY, _L("Raspberry command queue")), 0,
+    layout->Add(new wxStaticText(content, wxID_ANY, _L("Raspberry command queue")), 0,
         wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
-    m_queue = new wxListBox(this, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(480, 84)));
+    m_queue = new wxListBox(content, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(480, 84)));
     m_queue->Append(_L("Loading queue…"));
     layout->Add(m_queue, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
-    auto* cancel_command_button = new wxButton(this, wxID_ANY, _L("Cancel selected queued command"));
-    auto* retry_command_button = new wxButton(this, wxID_ANY, _L("Retry selected failed command"));
+    auto* cancel_command_button = new wxButton(content, wxID_ANY, _L("Cancel selected queued command"));
+    auto* retry_command_button = new wxButton(content, wxID_ANY, _L("Retry selected failed command"));
     auto* queue_actions = new wxBoxSizer(wxHORIZONTAL);
     queue_actions->Add(retry_command_button, 0, wxRIGHT, FromDIP(8));
     queue_actions->Add(cancel_command_button, 0);
     layout->Add(queue_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_RIGHT, FromDIP(16));
 
-    layout->Add(new wxStaticText(this, wxID_ANY, _L("Server command log")), 0,
+    layout->Add(new wxStaticText(content, wxID_ANY, _L("Server command log")), 0,
         wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
-    m_command_log = new wxListBox(this, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(480, 76)));
+    m_command_log = new wxListBox(content, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(480, 76)));
     m_command_log->Append(_L("Loading command log…"));
     layout->Add(m_command_log, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
     auto* macro_row = new wxBoxSizer(wxHORIZONTAL);
-    m_macro_choice = new wxChoice(this, wxID_ANY);
+    m_macro_choice = new wxChoice(content, wxID_ANY);
     m_macro_choice->SetMinSize(FromDIP(wxSize(330, -1)));
     m_macro_choice->Append(_L("Loading server macros…"));
     m_macro_choice->SetSelection(0);
-    m_run_macro = new wxButton(this, wxID_ANY, _L("Run macro"));
+    m_run_macro = new wxButton(content, wxID_ANY, _L("Run macro"));
     macro_row->Add(m_macro_choice, 1, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
     macro_row->Add(m_run_macro, 0);
     layout->Add(macro_row, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
-    m_camera = new wxStaticBitmap(this, wxID_ANY, wxNullBitmap, wxDefaultPosition, FromDIP(wxSize(480, 270)));
+    m_camera = new wxStaticBitmap(content, wxID_ANY, wxNullBitmap, wxDefaultPosition, FromDIP(wxSize(480, 270)));
     m_camera->SetMinSize(FromDIP(wxSize(480, 270)));
     layout->Add(m_camera, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_CENTER_HORIZONTAL, FromDIP(16));
-    m_camera_status = new wxStaticText(this, wxID_ANY, _L("Live camera: waiting for first frame…"));
+    m_camera_status = new wxStaticText(content, wxID_ANY, _L("Live camera: waiting for first frame…"));
     layout->Add(m_camera_status, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_CENTER_HORIZONTAL, FromDIP(16));
 
     auto* quick_actions = new wxBoxSizer(wxHORIZONTAL);
-    m_pause = new wxButton(this, wxID_ANY, _L("Pause"));
-    m_resume = new wxButton(this, wxID_ANY, _L("Resume"));
-    m_stop = new wxButton(this, wxID_ANY, _L("Emergency stop"));
+    m_pause = new wxButton(content, wxID_ANY, _L("Pause"));
+    m_resume = new wxButton(content, wxID_ANY, _L("Resume"));
+    m_stop = new wxButton(content, wxID_ANY, _L("Emergency stop"));
     quick_actions->Add(m_pause, 0, wxRIGHT, FromDIP(8));
     quick_actions->Add(m_resume, 0, wxRIGHT, FromDIP(8));
     quick_actions->Add(m_stop, 0);
     layout->Add(quick_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
 
-    layout->Add(new wxStaticText(this, wxID_ANY, _L("G-code terminal (queued through Raspberry)")), 0,
+    layout->Add(new wxStaticText(content, wxID_ANY, _L("G-code terminal (queued through Raspberry)")), 0,
         wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
-    m_command = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, FromDIP(wxSize(480, 72)), wxTE_MULTILINE);
+    m_command = new wxTextCtrl(content, wxID_ANY, wxEmptyString, wxDefaultPosition, FromDIP(wxSize(480, 72)), wxTE_MULTILINE);
     m_command->SetHint("SET_PIN PIN=caselight VALUE=1");
     layout->Add(m_command, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
-    m_send_command = new wxButton(this, wxID_ANY, _L("Queue G-code"));
+    m_send_command = new wxButton(content, wxID_ANY, _L("Queue G-code"));
     auto* command_actions = new wxBoxSizer(wxHORIZONTAL);
-    command_actions->Add(new wxStaticText(this, wxID_ANY, _L("Priority")), 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
-    m_command_priority = new wxChoice(this, wxID_ANY);
+    command_actions->Add(new wxStaticText(content, wxID_ANY, _L("Priority")), 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
+    m_command_priority = new wxChoice(content, wxID_ANY);
     m_command_priority->Append(_L("Normal"));
     m_command_priority->Append(_L("High"));
     m_command_priority->Append(_L("Emergency"));
     m_command_priority->SetSelection(0);
     command_actions->Add(m_command_priority, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
-    m_command_group = new wxChoice(this, wxID_ANY);
+    m_command_group = new wxChoice(content, wxID_ANY);
     m_command_group->Append(_L("Manual"));
     m_command_group->Append(_L("Camera and lighting"));
     m_command_group->Append(_L("Calibration"));
@@ -141,14 +148,18 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     layout->Add(command_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
     auto* buttons = new wxStdDialogButtonSizer();
-    m_check = new wxButton(this, wxID_ANY, _L("Check server"));
+    m_check = new wxButton(content, wxID_ANY, _L("Check server"));
     buttons->AddButton(m_check);
-    buttons->AddButton(new wxButton(this, wxID_OK, _L("Save")));
-    buttons->AddButton(new wxButton(this, wxID_CANCEL));
+    buttons->AddButton(new wxButton(content, wxID_OK, _L("Save")));
+    buttons->AddButton(new wxButton(content, wxID_CANCEL));
     buttons->Realize();
     layout->Add(buttons, 0, wxALL | wxALIGN_RIGHT, FromDIP(12));
-    SetSizerAndFit(layout);
-    SetMinSize(FromDIP(wxSize(500, 0)));
+    content->SetSizer(layout);
+    content->SetMinSize(FromDIP(wxSize(520, 580)));
+    root_layout->Add(content, 1, wxEXPAND);
+    SetSizer(root_layout);
+    SetSize(FromDIP(wxSize(620, 760)));
+    SetMinSize(FromDIP(wxSize(520, 480)));
     CentreOnParent();
 
     m_check->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { check_connection(); });
