@@ -30,6 +30,7 @@ private:
     void                save_connection();
     void                check_connection();
     void                refresh_status(bool announce = false);
+    void                refresh_materials();
     void                send_command(const std::string& script, int priority, const wxString& action);
     void                refresh_camera();
     void                show_camera_frame(const QidiAdminResult& result);
@@ -40,6 +41,7 @@ private:
     wxTextCtrl*         m_command {nullptr};
     wxCheckBox*         m_verify_tls {nullptr};
     wxStaticText*       m_status {nullptr};
+    wxStaticText*       m_material {nullptr};
     wxStaticBitmap*     m_camera {nullptr};
     wxButton*           m_check {nullptr};
     wxButton*           m_pause {nullptr};
@@ -47,6 +49,7 @@ private:
     wxButton*           m_stop {nullptr};
     Http::Ptr           m_pending_request;
     Http::Ptr           m_status_request;
+    Http::Ptr           m_material_request;
     Http::Ptr           m_camera_request;
     wxTimer             m_camera_timer;
     int                 m_refresh_ticks {0};

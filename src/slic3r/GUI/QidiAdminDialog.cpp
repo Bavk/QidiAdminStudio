@@ -1,5 +1,7 @@
 #include "QidiAdminDialog.hpp"
 
+#include <algorithm>
+
 #include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/mstream.h>
@@ -42,6 +44,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
 
     m_status = new wxStaticText(this, wxID_ANY, _L("Not checked yet."));
     layout->Add(m_status, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    m_material = new wxStaticText(this, wxID_ANY, _L("Material: loading from Raspberry…"));
+    layout->Add(m_material, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
 
     m_camera = new wxStaticBitmap(this, wxID_ANY, wxNullBitmap, wxDefaultPosition, FromDIP(wxSize(480, 270)));
     m_camera->SetMinSize(FromDIP(wxSize(480, 270)));
@@ -93,9 +97,17 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     });
     Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { save_connection(); EndModal(wxID_OK); }, wxID_OK);
     Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
+        // Do not continuously create failing requests while the connection
+        // form is still empty. This dialog is also used as the first-run
+        // setup surface.
+        const QidiAdminConnection value = connection();
+        if (!QidiAdminGateway::is_valid_endpoint(value.endpoint) || value.api_key.empty())
+            return;
         refresh_camera();
         if (++m_refresh_ticks % 4 == 0)
             refresh_status();
+        if (m_refresh_ticks % 12 == 0)
+            refresh_materials();
     }, m_camera_timer.GetId());
     m_camera_timer.Start(500);
     wxGetApp().UpdateDlgDarkUI(this);
@@ -108,8 +120,43 @@ QidiAdminDialog::~QidiAdminDialog()
         m_pending_request->cancel();
     if (m_status_request)
         m_status_request->cancel();
+    if (m_material_request)
+        m_material_request->cancel();
     if (m_camera_request)
         m_camera_request->cancel();
+}
+
+void QidiAdminDialog::refresh_materials()
+{
+    if (m_material_request)
+        return;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_material_request = QidiAdminGateway::fetch_materials(connection(), [weak_this](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_material_request.reset();
+            if (!result.ok)
+                return;
+            try {
+                const auto spools = nlohmann::json::parse(result.body);
+                if (!spools.is_array() || spools.empty()) {
+                    weak_this->m_material->SetLabel(_L("Material: no active spool configured."));
+                    return;
+                }
+                const auto active = std::find_if(spools.begin(), spools.end(), [](const auto& spool) {
+                    return spool.value("active", false);
+                });
+                const auto& spool = active == spools.end() ? spools.front() : *active;
+                const wxString name = from_u8(spool.value("name", "Unknown spool"));
+                const wxString type = from_u8(spool.value("material_type", ""));
+                const double weight = spool.value("remaining_weight_g", 0.0);
+                weak_this->m_material->SetLabel(wxString::Format(_L("Material: %s · %s · %.0f g remaining"), name, type, weight));
+            } catch (const std::exception&) {
+                weak_this->m_material->SetLabel(_L("Material: response could not be parsed."));
+            }
+        });
+    });
 }
 
 QidiAdminConnection QidiAdminDialog::connection() const
@@ -160,6 +207,7 @@ void QidiAdminDialog::send_command(const std::string& script, int priority, cons
         wxTheApp->CallAfter([weak_this, action, result = std::move(result)]() {
             if (!weak_this)
                 return;
+            weak_this->m_pending_request.reset();
             if (result.ok)
                 weak_this->m_status->SetLabel(wxString::Format(_L("%s queued on Raspberry."), action));
             else
