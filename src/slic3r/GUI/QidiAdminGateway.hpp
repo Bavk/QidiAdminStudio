@@ -41,6 +41,7 @@ public:
     static Http::Ptr fetch_macros(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_maintenance_tasks(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_command_queue(const QidiAdminConnection& connection, ResultCallback callback);
+    static Http::Ptr cancel_queued_command(const QidiAdminConnection& connection, int command_id, ResultCallback callback);
     static Http::Ptr preflight(const QidiAdminConnection& connection,
                                const std::string& filename,
                                const std::string& printer_id,

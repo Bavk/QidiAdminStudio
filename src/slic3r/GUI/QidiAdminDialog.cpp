@@ -70,6 +70,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_queue = new wxListBox(this, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(480, 84)));
     m_queue->Append(_L("Loading queue…"));
     layout->Add(m_queue, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
+    auto* cancel_command_button = new wxButton(this, wxID_ANY, _L("Cancel selected queued command"));
+    layout->Add(cancel_command_button, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_RIGHT, FromDIP(16));
 
     auto* macro_row = new wxBoxSizer(wxHORIZONTAL);
     m_macro_choice = new wxChoice(this, wxID_ANY);
@@ -130,6 +132,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         m_command->Clear();
     });
     run_macro_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { run_selected_macro(); });
+    cancel_command_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { cancel_selected_command(); });
     Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { save_connection(); EndModal(wxID_OK); }, wxID_OK);
     Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
         // Do not continuously create failing requests while the connection
@@ -177,6 +180,8 @@ QidiAdminDialog::~QidiAdminDialog()
         m_maintenance_request->cancel();
     if (m_queue_request)
         m_queue_request->cancel();
+    if (m_queue_cancel_request)
+        m_queue_cancel_request->cancel();
     if (m_camera_request)
         m_camera_request->cancel();
 }
@@ -198,6 +203,7 @@ void QidiAdminDialog::refresh_command_queue()
                 if (!entries.is_array())
                     return;
                 weak_this->m_queue->Clear();
+                weak_this->m_queue_command_ids.clear();
                 if (entries.empty()) {
                     weak_this->m_queue->Append(_L("No queued or recent commands."));
                     return;
@@ -210,10 +216,39 @@ void QidiAdminDialog::refresh_command_queue()
                         script = script.Left(67) + "…";
                     const int priority = entry.value("priority", 0);
                     weak_this->m_queue->Append(wxString::Format(_L("[%s · P%d] %s"), status, priority, script));
+                    weak_this->m_queue_command_ids.emplace_back(entry.value("id", 0));
                 }
             } catch (const std::exception&) {
                 weak_this->m_queue->Clear();
+                weak_this->m_queue_command_ids.clear();
                 weak_this->m_queue->Append(_L("Command queue response could not be parsed."));
+            }
+        });
+    });
+}
+
+void QidiAdminDialog::cancel_selected_command()
+{
+    const int selection = m_queue ? m_queue->GetSelection() : wxNOT_FOUND;
+    if (selection == wxNOT_FOUND || static_cast<size_t>(selection) >= m_queue_command_ids.size()) {
+        m_status->SetLabel(_L("Select a queued command first."));
+        return;
+    }
+    const int command_id = m_queue_command_ids[selection];
+    if (command_id <= 0)
+        return;
+    m_status->SetLabel(_L("Cancelling queued command…"));
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_queue_cancel_request = QidiAdminGateway::cancel_queued_command(connection(), command_id, [weak_this](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_queue_cancel_request.reset();
+            if (result.ok) {
+                weak_this->m_status->SetLabel(_L("Queued command cancelled."));
+                weak_this->refresh_command_queue();
+            } else {
+                weak_this->show_result(result);
             }
         });
     });
