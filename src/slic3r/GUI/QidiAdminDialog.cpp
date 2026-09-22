@@ -8,6 +8,8 @@
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 
+#include <nlohmann/json.hpp>
+
 #include "GUI_App.hpp"
 #include "I18N.hpp"
 #include "QidiAdminCredentials.hpp"
@@ -73,7 +75,11 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
             send_command("M112", 100, _L("Emergency stop"));
     });
     Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { save_connection(); EndModal(wxID_OK); }, wxID_OK);
-    Bind(wxEVT_TIMER, [this](wxTimerEvent&) { refresh_camera(); }, m_camera_timer.GetId());
+    Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
+        refresh_camera();
+        if (++m_refresh_ticks % 4 == 0)
+            refresh_status();
+    }, m_camera_timer.GetId());
     m_camera_timer.Start(500);
     wxGetApp().UpdateDlgDarkUI(this);
 }
@@ -81,6 +87,10 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
 QidiAdminDialog::~QidiAdminDialog()
 {
     m_camera_timer.Stop();
+    if (m_pending_request)
+        m_pending_request->cancel();
+    if (m_status_request)
+        m_status_request->cancel();
     if (m_camera_request)
         m_camera_request->cancel();
 }
@@ -100,17 +110,28 @@ void QidiAdminDialog::save_connection()
 
 void QidiAdminDialog::check_connection()
 {
+    refresh_status(true);
+}
+
+void QidiAdminDialog::refresh_status(bool announce)
+{
+    if (m_status_request)
+        return;
     const QidiAdminConnection value = connection();
-    m_check->Disable();
-    m_status->SetLabel(_L("Checking Qidi Admin Server…"));
+    if (announce) {
+        m_check->Disable();
+        m_status->SetLabel(_L("Checking Qidi Admin Server…"));
+    }
     wxWeakRef<QidiAdminDialog> weak_this(this);
-    m_pending_request = QidiAdminGateway::fetch_status(value, [weak_this](QidiAdminResult result) {
+    m_status_request = QidiAdminGateway::fetch_status(value, [weak_this](QidiAdminResult result) {
         wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
-            if (weak_this)
+            if (weak_this) {
+                weak_this->m_status_request.reset();
                 weak_this->show_result(result);
+            }
         });
     });
-    if (!m_pending_request)
+    if (!m_status_request)
         show_result({false, 0, {}, _L("Connection settings are incomplete.").ToUTF8().data()});
 }
 
@@ -165,7 +186,24 @@ void QidiAdminDialog::show_result(const QidiAdminResult& result)
     if (m_check)
         m_check->Enable();
     if (result.ok) {
-        m_status->SetLabel(wxString::Format(_L("Connected — HTTP %u."), result.status));
+        try {
+            const auto payload = nlohmann::json::parse(result.body);
+            const auto& printer = payload.at("printer").at("result").at("status");
+            const auto& print_stats = printer.at("print_stats");
+            const auto& display = printer.at("display_status");
+            const auto& extruder = printer.at("extruder");
+            const auto& bed = printer.at("heater_bed");
+            const wxString state = from_u8(print_stats.value("state", "unknown"));
+            const double progress = display.value("progress", 0.0) * 100.0;
+            const double nozzle = extruder.value("temperature", 0.0);
+            const double nozzle_target = extruder.value("target", 0.0);
+            const double bed_temp = bed.value("temperature", 0.0);
+            const double bed_target = bed.value("target", 0.0);
+            m_status->SetLabel(wxString::Format(_L("%s · %.0f%% · Nozzle %.0f/%.0f°C · Bed %.0f/%.0f°C"),
+                state, progress, nozzle, nozzle_target, bed_temp, bed_target));
+        } catch (const std::exception&) {
+            m_status->SetLabel(wxString::Format(_L("Connected — HTTP %u."), result.status));
+        }
         return;
     }
     const wxString detail = from_u8(result.error.empty() ? result.body : result.error);

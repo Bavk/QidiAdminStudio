@@ -29,6 +29,7 @@ private:
     QidiAdminConnection connection() const;
     void                save_connection();
     void                check_connection();
+    void                refresh_status(bool announce = false);
     void                send_command(const std::string& script, int priority, const wxString& action);
     void                refresh_camera();
     void                show_camera_frame(const QidiAdminResult& result);
@@ -44,8 +45,10 @@ private:
     wxButton*           m_resume {nullptr};
     wxButton*           m_stop {nullptr};
     Http::Ptr           m_pending_request;
+    Http::Ptr           m_status_request;
     Http::Ptr           m_camera_request;
     wxTimer             m_camera_timer;
+    int                 m_refresh_ticks {0};
 };
 
 } // namespace Slic3r::GUI
