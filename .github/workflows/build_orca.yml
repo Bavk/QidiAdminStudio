@@ -606,18 +606,18 @@ jobs:
         run: |
           ./scripts/msix/build_msix.ps1 `
             -InstallDir "${{ github.workspace }}/${{ env.BUILD_DIR }}/QidiAdminStudio" `
-            -OutputPath "${{ github.workspace }}/${{ env.BUILD_DIR }}/OrcaSlicer_Windows_MSIX_${{ env.ver }}${{ env.ARCH_SUFFIX }}.msix" `
+            -OutputPath "${{ github.workspace }}/${{ env.BUILD_DIR }}/QidiAdminStudio_Windows_MSIX_${{ env.ver }}${{ env.ARCH_SUFFIX }}.msix" `
             -Architecture "${{ inputs.arch }}" `
-            -IdentityName "${{ vars.ORCA_MSIX_IDENTITY_NAME || 'OrcaSlicer.OrcaSlicer' }}" `
+            -IdentityName "${{ vars.QIDI_MSIX_IDENTITY_NAME || 'Qidi.QidiAdminStudio' }}" `
             -Publisher "${{ vars.ORCA_MSIX_PUBLISHER || 'CN=38F7EA55-C73B-4072-B3B2-C8E0EA15BB82' }}" `
-            -PublisherDisplayName "${{ vars.ORCA_MSIX_PUBLISHER_DISPLAY_NAME || 'OrcaSlicer' }}"
+            -PublisherDisplayName "${{ vars.QIDI_MSIX_PUBLISHER_DISPLAY_NAME || 'Qidi Admin Studio' }}"
 
       - name: Upload artifacts Win MSIX
         if: runner.os == 'Windows' && !vars.SELF_HOSTED
         uses: actions/upload-artifact@v7
         with:
-          name: OrcaSlicer_Windows_MSIX_${{ env.ver }}${{ env.ARCH_SUFFIX }}
-          path: ${{ github.workspace }}/${{ env.BUILD_DIR }}/OrcaSlicer_Windows_MSIX_${{ env.ver }}${{ env.ARCH_SUFFIX }}.msix
+          name: QidiAdminStudio_Windows_MSIX_${{ env.ver }}${{ env.ARCH_SUFFIX }}
+          path: ${{ github.workspace }}/${{ env.BUILD_DIR }}/QidiAdminStudio_Windows_MSIX_${{ env.ver }}${{ env.ARCH_SUFFIX }}.msix
 
 # Ubuntu
       - name: Apt-Install Dependencies
