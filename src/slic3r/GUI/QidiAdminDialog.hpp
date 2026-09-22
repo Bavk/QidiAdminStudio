@@ -45,6 +45,7 @@ private:
     void                refresh_maintenance();
     void                refresh_command_queue();
     void                cancel_selected_command();
+    void                retry_selected_command();
     void                run_selected_macro();
     void                send_command(const std::string& script, int priority, const wxString& action);
     void                refresh_camera();
@@ -72,6 +73,7 @@ private:
     Http::Ptr           m_maintenance_request;
     Http::Ptr           m_queue_request;
     Http::Ptr           m_queue_cancel_request;
+    Http::Ptr           m_queue_retry_request;
     Http::Ptr           m_camera_request;
     wxTimer             m_camera_timer;
     int                 m_refresh_ticks {0};

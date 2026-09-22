@@ -125,6 +125,32 @@ Http::Ptr QidiAdminGateway::cancel_queued_command(const QidiAdminConnection& con
     return request.perform();
 }
 
+Http::Ptr QidiAdminGateway::retry_queued_command(const QidiAdminConnection& connection, int command_id, ResultCallback callback)
+{
+    if (command_id <= 0) {
+        callback({false, 0, {}, "Select a command first."});
+        return nullptr;
+    }
+    if (!is_valid_endpoint(connection.endpoint) || connection.api_key.empty()) {
+        callback({false, 0, {}, "Qidi Admin Server connection settings are incomplete."});
+        return nullptr;
+    }
+    auto callback_holder = std::make_shared<ResultCallback>(std::move(callback));
+    Http request = Http::post(normalized_endpoint(connection.endpoint) + "/api/v1/command-queue/" + std::to_string(command_id) + "/retry");
+    request.timeout_connect(5).timeout_max(15).tls_verify(connection.verify_tls)
+        .header("X-Api-Key", connection.api_key)
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .set_post_body("{}")
+        .on_complete([callback_holder](std::string body, unsigned status) {
+            (*callback_holder)({status >= 200 && status < 300, status, std::move(body), {}});
+        })
+        .on_error([callback_holder](std::string body, std::string error, unsigned status) {
+            (*callback_holder)({false, status, std::move(body), std::move(error)});
+        });
+    return request.perform();
+}
+
 Http::Ptr QidiAdminGateway::preflight(const QidiAdminConnection& connection,
                                       const std::string& filename,
                                       const std::string& printer_id,
