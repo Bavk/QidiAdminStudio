@@ -102,6 +102,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_camera = new wxStaticBitmap(this, wxID_ANY, wxNullBitmap, wxDefaultPosition, FromDIP(wxSize(480, 270)));
     m_camera->SetMinSize(FromDIP(wxSize(480, 270)));
     layout->Add(m_camera, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_CENTER_HORIZONTAL, FromDIP(16));
+    m_camera_status = new wxStaticText(this, wxID_ANY, _L("Live camera: waiting for first frame…"));
+    layout->Add(m_camera_status, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_CENTER_HORIZONTAL, FromDIP(16));
 
     auto* quick_actions = new wxBoxSizer(wxHORIZONTAL);
     m_pause = new wxButton(this, wxID_ANY, _L("Pause"));
@@ -701,10 +703,21 @@ void QidiAdminDialog::show_camera_frame(const QidiAdminResult& result)
     wxImage image(stream, wxBITMAP_TYPE_JPEG);
     if (!image.IsOk())
         return;
+    const int source_width = image.GetWidth();
+    const int source_height = image.GetHeight();
+    const auto now = std::chrono::steady_clock::now();
+    if (m_camera_last_frame.time_since_epoch().count() != 0) {
+        const double seconds = std::chrono::duration<double>(now - m_camera_last_frame).count();
+        if (seconds > 0.001)
+            m_camera_fps = m_camera_fps <= 0.0 ? 1.0 / seconds : (m_camera_fps * 0.7 + (1.0 / seconds) * 0.3);
+    }
+    m_camera_last_frame = now;
     const wxSize target = m_camera->GetSize();
     if (target.x > 0 && target.y > 0)
         image.Rescale(target.x, target.y, wxIMAGE_QUALITY_HIGH);
     m_camera->SetBitmap(wxBitmap(image));
+    if (m_camera_status)
+        m_camera_status->SetLabel(wxString::Format(_L("Live camera: %.1f FPS · %d x %d"), m_camera_fps, source_width, source_height));
     Layout();
 }
 

@@ -1,6 +1,7 @@
 #ifndef slic3r_GUI_QidiAdminDialog_hpp_
 #define slic3r_GUI_QidiAdminDialog_hpp_
 
+#include <chrono>
 #include <memory>
 #include <vector>
 
@@ -75,6 +76,7 @@ private:
     wxListBox*          m_command_log {nullptr};
     wxChoice*           m_macro_choice {nullptr};
     wxStaticBitmap*     m_camera {nullptr};
+    wxStaticText*       m_camera_status {nullptr};
     wxButton*           m_check {nullptr};
     wxButton*           m_pause {nullptr};
     wxButton*           m_resume {nullptr};
@@ -94,6 +96,8 @@ private:
     Http::Ptr           m_camera_request;
     wxTimer             m_camera_timer;
     int                 m_refresh_ticks {0};
+    std::chrono::steady_clock::time_point m_camera_last_frame;
+    double              m_camera_fps {0.0};
     std::vector<ServerMacro> m_macros;
     std::vector<int>    m_queue_command_ids;
 };
