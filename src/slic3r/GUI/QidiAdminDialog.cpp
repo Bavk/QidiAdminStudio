@@ -117,6 +117,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_macro_choice->Append(_L("Loading server macros…"));
     m_macro_choice->SetSelection(0);
     m_run_macro = new wxButton(content, wxID_ANY, _L("Run macro"));
+    m_run_macro->Disable();
     macro_row->Add(m_macro_choice, 1, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
     macro_row->Add(m_run_macro, 0);
     layout->Add(macro_row, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
@@ -131,6 +132,12 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_pause = new wxButton(content, wxID_ANY, _L("Pause"));
     m_resume = new wxButton(content, wxID_ANY, _L("Resume"));
     m_stop = new wxButton(content, wxID_ANY, _L("Emergency stop"));
+    // Enable controlling actions only after the server has confirmed the
+    // caller's role. This avoids a misleading enabled state for camera-only
+    // credentials during the first asynchronous role lookup.
+    m_pause->Disable();
+    m_resume->Disable();
+    m_stop->Disable();
     quick_actions->Add(m_pause, 0, wxRIGHT, FromDIP(8));
     quick_actions->Add(m_resume, 0, wxRIGHT, FromDIP(8));
     quick_actions->Add(m_stop, 0);
@@ -143,6 +150,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     layout->Add(m_command, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
     m_send_command = new wxButton(content, wxID_ANY, _L("Queue G-code"));
     m_simulate_command = new wxButton(content, wxID_ANY, _L("Review G-code"));
+    m_send_command->Disable();
+    m_simulate_command->Disable();
     auto* command_actions = new wxBoxSizer(wxHORIZONTAL);
     command_actions->Add(new wxStaticText(content, wxID_ANY, _L("Priority")), 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
     m_command_priority = new wxChoice(content, wxID_ANY);
