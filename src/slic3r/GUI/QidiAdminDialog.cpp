@@ -56,6 +56,14 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     quick_actions->Add(m_stop, 0);
     layout->Add(quick_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
 
+    layout->Add(new wxStaticText(this, wxID_ANY, _L("G-code terminal (queued through Raspberry)")), 0,
+        wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    m_command = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, FromDIP(wxSize(480, 72)), wxTE_MULTILINE);
+    m_command->SetHint("SET_PIN PIN=caselight VALUE=1");
+    layout->Add(m_command, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
+    auto* send_command_button = new wxButton(this, wxID_ANY, _L("Queue G-code"));
+    layout->Add(send_command_button, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_RIGHT, FromDIP(16));
+
     auto* buttons = new wxStdDialogButtonSizer();
     m_check = new wxButton(this, wxID_ANY, _L("Check server"));
     buttons->AddButton(m_check);
@@ -73,6 +81,15 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_stop->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
         if (wxMessageBox(_L("Immediately stop the printer?"), _L("Emergency stop"), wxYES_NO | wxICON_WARNING, this) == wxYES)
             send_command("M112", 100, _L("Emergency stop"));
+    });
+    send_command_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        const std::string script = into_u8(m_command->GetValue());
+        if (script.empty()) {
+            m_status->SetLabel(_L("Enter G-code before queueing it."));
+            return;
+        }
+        send_command(script, 50, _L("G-code"));
+        m_command->Clear();
     });
     Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { save_connection(); EndModal(wxID_OK); }, wxID_OK);
     Bind(wxEVT_TIMER, [this](wxTimerEvent&) {

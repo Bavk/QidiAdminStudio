@@ -37,6 +37,7 @@ private:
 
     wxTextCtrl*         m_endpoint {nullptr};
     wxTextCtrl*         m_api_key {nullptr};
+    wxTextCtrl*         m_command {nullptr};
     wxCheckBox*         m_verify_tls {nullptr};
     wxStaticText*       m_status {nullptr};
     wxStaticBitmap*     m_camera {nullptr};
