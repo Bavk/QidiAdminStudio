@@ -232,6 +232,34 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     quick_actions->Add(m_stop, 0);
     layout->Add(quick_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
 
+    layout->Add(new wxStaticText(content, wxID_ANY, _L("QIDI Q2 temperatures (0 turns heating off)")), 0,
+        wxLEFT | wxRIGHT | wxTOP | wxBOTTOM, FromDIP(16));
+    auto add_temperature_row = [&](const wxString& name, const wxString& hint,
+                                   wxTextCtrl*& input, wxButton*& apply) {
+        auto* row = new wxBoxSizer(wxHORIZONTAL);
+        row->Add(new wxStaticText(content, wxID_ANY, name), 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
+        input = new wxTextCtrl(content, wxID_ANY, wxEmptyString, wxDefaultPosition, FromDIP(wxSize(88, -1)));
+        input->SetHint(hint);
+        row->Add(input, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
+        apply = new wxButton(content, wxID_ANY, _L("Set target"));
+        apply->Disable();
+        row->Add(apply, 0);
+        layout->Add(row, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    };
+    add_temperature_row(_L("Nozzle"), "0–370 °C", m_nozzle_target, m_apply_nozzle);
+    add_temperature_row(_L("Bed"), "0–120 °C", m_bed_target, m_apply_bed);
+    add_temperature_row(_L("Chamber"), "0–65 °C", m_chamber_target, m_apply_chamber);
+    auto* light_actions = new wxBoxSizer(wxHORIZONTAL);
+    light_actions->Add(new wxStaticText(content, wxID_ANY, _L("Camera light")), 0,
+        wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
+    m_light_on = new wxButton(content, wxID_ANY, _L("On"));
+    m_light_off = new wxButton(content, wxID_ANY, _L("Off"));
+    m_light_on->Disable();
+    m_light_off->Disable();
+    light_actions->Add(m_light_on, 0, wxRIGHT, FromDIP(8));
+    light_actions->Add(m_light_off, 0);
+    layout->Add(light_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+
     layout->Add(new wxStaticText(content, wxID_ANY, _L("G-code terminal (queued through Raspberry)")), 0,
         wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_command = new wxTextCtrl(content, wxID_ANY, wxEmptyString, wxDefaultPosition, FromDIP(wxSize(480, 72)), wxTE_MULTILINE);
@@ -271,6 +299,31 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_verify_tls->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) { invalidate_access_role(); });
     m_pause->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { send_command("PAUSE", 80, _L("Pause")); });
     m_resume->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { send_command("RESUME", 80, _L("Resume")); });
+    auto bind_temperature = [this](wxButton* button, wxTextCtrl* input, long maximum,
+                                   const char* command, const wxString& label) {
+        button->Bind(wxEVT_BUTTON, [this, input, maximum, command, label](wxCommandEvent&) {
+            long target = -1;
+            if (!m_may_control || !input->GetValue().ToLong(&target) || target < 0 || target > maximum) {
+                wxMessageBox(wxString::Format(_L("Enter a whole-number %s target from 0 to %ld °C."), label, maximum),
+                    _L("Invalid temperature"), wxOK | wxICON_WARNING, this);
+                return;
+            }
+            if (target > maximum * 8 / 10 &&
+                wxMessageBox(wxString::Format(_L("Set %s to %ld °C?"), label, target),
+                    _L("Confirm high temperature"), wxYES_NO | wxICON_WARNING, this) != wxYES)
+                return;
+            send_command(std::string(command) + std::to_string(target), 50, label, "Temperature");
+        });
+    };
+    bind_temperature(m_apply_nozzle, m_nozzle_target, 370, "M104 S", _L("Nozzle"));
+    bind_temperature(m_apply_bed, m_bed_target, 120, "M140 S", _L("Bed"));
+    bind_temperature(m_apply_chamber, m_chamber_target, 65, "M141 S", _L("Chamber"));
+    m_light_on->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        if (m_may_control) send_command("SET_PIN PIN=caselight VALUE=1", 50, _L("Camera light on"), "Camera and lighting");
+    });
+    m_light_off->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        if (m_may_control) send_command("SET_PIN PIN=caselight VALUE=0", 50, _L("Camera light off"), "Camera and lighting");
+    });
     m_stop->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
         if (wxMessageBox(_L("Immediately stop the printer?"), _L("Emergency stop"), wxYES_NO | wxICON_WARNING, this) == wxYES)
         {
@@ -1279,6 +1332,11 @@ void QidiAdminDialog::invalidate_access_role()
     m_pause->Disable();
     m_resume->Disable();
     m_stop->Disable();
+    m_apply_nozzle->Disable();
+    m_apply_bed->Disable();
+    m_apply_chamber->Disable();
+    m_light_on->Disable();
+    m_light_off->Disable();
     m_run_macro->Disable();
     m_add_macro->Disable();
     m_edit_macro->Disable();
@@ -1318,6 +1376,11 @@ void QidiAdminDialog::refresh_access_role()
                 if (weak_this->m_pause) weak_this->m_pause->Enable(may_control);
                 if (weak_this->m_resume) weak_this->m_resume->Enable(may_control);
                 if (weak_this->m_stop) weak_this->m_stop->Enable(may_control);
+                if (weak_this->m_apply_nozzle) weak_this->m_apply_nozzle->Enable(may_control);
+                if (weak_this->m_apply_bed) weak_this->m_apply_bed->Enable(may_control);
+                if (weak_this->m_apply_chamber) weak_this->m_apply_chamber->Enable(may_control);
+                if (weak_this->m_light_on) weak_this->m_light_on->Enable(may_control);
+                if (weak_this->m_light_off) weak_this->m_light_off->Enable(may_control);
                 if (weak_this->m_run_macro) weak_this->m_run_macro->Enable(may_control);
                 if (weak_this->m_add_macro) weak_this->m_add_macro->Enable(weak_this->m_may_manage_spools);
                 if (weak_this->m_edit_macro) weak_this->m_edit_macro->Enable(weak_this->m_may_manage_spools && !weak_this->m_macros.empty());

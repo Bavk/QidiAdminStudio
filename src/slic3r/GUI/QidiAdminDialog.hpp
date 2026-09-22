@@ -115,6 +115,14 @@ private:
     wxButton*           m_pause {nullptr};
     wxButton*           m_resume {nullptr};
     wxButton*           m_stop {nullptr};
+    wxTextCtrl*         m_nozzle_target {nullptr};
+    wxTextCtrl*         m_bed_target {nullptr};
+    wxTextCtrl*         m_chamber_target {nullptr};
+    wxButton*           m_apply_nozzle {nullptr};
+    wxButton*           m_apply_bed {nullptr};
+    wxButton*           m_apply_chamber {nullptr};
+    wxButton*           m_light_on {nullptr};
+    wxButton*           m_light_off {nullptr};
     wxButton*           m_run_macro {nullptr};
     wxButton*           m_add_macro {nullptr};
     wxButton*           m_edit_macro {nullptr};
