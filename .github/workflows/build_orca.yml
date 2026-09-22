@@ -489,7 +489,10 @@ jobs:
           $deps = (Split-Path "${{ inputs.cache-path }}").Replace('\', '/')
           # -l compiles with Visual Studio's clang-cl and -x builds with Ninja; --msvc --msbuild is cl under the Visual Studio generator.
           $flags = if ("${{ inputs.compiler }}" -eq "clang") { "-l", "-x" } else { "--msvc", "--msbuild" }
-          .\build_win.bat -s -i --arch ${{ inputs.arch }} --build-dir $env:BUILD_DIR --deps-dir $deps @flags
+          # GitHub's Windows runner provides four vCPUs. Explicitly pass the
+          # value through to MSBuild and cl (/m + /MP); without it a full fork
+          # build can spend hours compiling projects almost serially.
+          .\build_win.bat -s -i --jobs 4 --arch ${{ inputs.arch }} --build-dir $env:BUILD_DIR --deps-dir $deps @flags
         shell: pwsh
 
       - name: Build system preset cache (Windows)
