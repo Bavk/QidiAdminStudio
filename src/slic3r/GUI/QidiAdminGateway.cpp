@@ -199,9 +199,42 @@ Http::Ptr QidiAdminGateway::fetch_maintenance_tasks(const QidiAdminConnection& c
     return request(connection, "/api/v1/maintenance/tasks?printer_id=q2", nullptr, std::move(callback));
 }
 
+Http::Ptr QidiAdminGateway::upsert_maintenance_task(const QidiAdminConnection& connection,
+                                                    const std::string& task_id,
+                                                    const std::string& json_body,
+                                                    ResultCallback callback)
+{
+    if (!is_valid_endpoint(connection.endpoint) || task_id.empty() || json_body.empty()) {
+        callback({false, 0, {}, "Maintenance task or Raspberry connection settings are incomplete."});
+        return nullptr;
+    }
+    auto callback_holder = std::make_shared<ResultCallback>(std::move(callback));
+    Http request = Http::put2(normalized_endpoint(connection.endpoint) +
+        "/api/v1/maintenance/tasks/" + Http::url_encode(task_id));
+    request.timeout_connect(5).timeout_max(20).tls_verify(connection.verify_tls);
+    if (!connection.api_key.empty())
+        request.header("X-Api-Key", connection.api_key);
+    request.header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .set_post_body(json_body)
+        .on_complete([callback_holder](std::string body, unsigned status) {
+            (*callback_holder)({status >= 200 && status < 300, status, std::move(body), {}});
+        })
+        .on_error([callback_holder](std::string body, std::string error, unsigned status) {
+            (*callback_holder)({false, status, std::move(body), std::move(error)});
+        });
+    return request.perform();
+}
+
 Http::Ptr QidiAdminGateway::fetch_print_history(const QidiAdminConnection& connection, ResultCallback callback)
 {
     return request(connection, "/api/v1/history", nullptr, std::move(callback));
+}
+
+Http::Ptr QidiAdminGateway::fetch_print_report(const QidiAdminConnection& connection, int days, ResultCallback callback)
+{
+    const std::string path = "/api/v1/reports/prints?printer_id=q2&days=" + std::to_string(std::clamp(days, 1, 365));
+    return request(connection, path, nullptr, std::move(callback));
 }
 
 Http::Ptr QidiAdminGateway::fetch_diagnostics(const QidiAdminConnection& connection, ResultCallback callback)

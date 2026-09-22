@@ -52,7 +52,12 @@ public:
                                  const std::string& json_body,
                                  ResultCallback callback);
     static Http::Ptr fetch_maintenance_tasks(const QidiAdminConnection& connection, ResultCallback callback);
+    static Http::Ptr upsert_maintenance_task(const QidiAdminConnection& connection,
+                                              const std::string& task_id,
+                                              const std::string& json_body,
+                                              ResultCallback callback);
     static Http::Ptr fetch_print_history(const QidiAdminConnection& connection, ResultCallback callback);
+    static Http::Ptr fetch_print_report(const QidiAdminConnection& connection, int days, ResultCallback callback);
     static Http::Ptr fetch_diagnostics(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr create_klipper_backup(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_klipper_backups(const QidiAdminConnection& connection, ResultCallback callback);

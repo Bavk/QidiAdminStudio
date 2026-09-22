@@ -8,6 +8,7 @@
 #include <wx/checkbox.h>
 #include <wx/choice.h>
 #include <wx/choicdlg.h>
+#include <wx/datetime.h>
 #include <wx/dialog.h>
 #include <wx/filedlg.h>
 #include <wx/listbox.h>
@@ -98,8 +99,22 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     layout->Add(spool_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_maintenance = new wxStaticText(content, wxID_ANY, _L("Maintenance: loading from Raspberry…"));
     layout->Add(m_maintenance, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    m_maintenance_list = new wxListBox(content, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(480, 84)));
+    m_maintenance_list->Append(_L("Loading service tasks…"));
+    layout->Add(m_maintenance_list, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
+    auto* maintenance_actions = new wxBoxSizer(wxHORIZONTAL);
+    m_add_maintenance = new wxButton(content, wxID_ANY, _L("Add service task…"));
+    m_edit_maintenance = new wxButton(content, wxID_ANY, _L("Edit service task…"));
+    m_add_maintenance->Disable();
+    m_edit_maintenance->Disable();
+    maintenance_actions->Add(m_add_maintenance, 0, wxRIGHT, FromDIP(8));
+    maintenance_actions->Add(m_edit_maintenance, 0);
+    layout->Add(maintenance_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_history = new wxStaticText(content, wxID_ANY, _L("Print history: loading from Raspberry…"));
     layout->Add(m_history, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    m_print_report = new wxButton(content, wxID_ANY, _L("Print and material report…"));
+    m_print_report->Disable();
+    layout->Add(m_print_report, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_diagnostics = new wxStaticText(content, wxID_ANY, _L("Raspberry health: loading…"));
     layout->Add(m_diagnostics, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_diagnostics_details = new wxButton(content, wxID_ANY, _L("Detailed Raspberry health…"));
@@ -279,6 +294,9 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_diagnostics_details->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { show_diagnostics_details(); });
     m_create_klipper_backup->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { create_klipper_backup(); });
     m_compare_klipper_backups->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { compare_klipper_backups(); });
+    m_print_report->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { show_print_report(); });
+    m_add_maintenance->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { edit_maintenance_task(true); });
+    m_edit_maintenance->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { edit_maintenance_task(false); });
     m_add_spool->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { edit_spool(true); });
     m_edit_spool->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { edit_spool(false); });
     m_simulate_command->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { simulate_command(); });
@@ -380,8 +398,12 @@ QidiAdminDialog::~QidiAdminDialog()
         m_macro_write_request->cancel();
     if (m_maintenance_request)
         m_maintenance_request->cancel();
+    if (m_maintenance_write_request)
+        m_maintenance_write_request->cancel();
     if (m_history_request)
         m_history_request->cancel();
+    if (m_print_report_request)
+        m_print_report_request->cancel();
     if (m_diagnostics_request)
         m_diagnostics_request->cancel();
     if (m_klipper_backup_request)
@@ -656,16 +678,36 @@ void QidiAdminDialog::refresh_maintenance()
     if (m_maintenance_request)
         return;
     wxWeakRef<QidiAdminDialog> weak_this(this);
-    m_maintenance_request = QidiAdminGateway::fetch_maintenance_tasks(connection(), [weak_this](QidiAdminResult result) {
-        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
-            if (!weak_this)
+    const auto generation = m_access_generation;
+    m_maintenance_request = QidiAdminGateway::fetch_maintenance_tasks(connection(), [weak_this, generation](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, generation, result = std::move(result)]() {
+            if (!weak_this || generation != weak_this->m_access_generation)
                 return;
             weak_this->m_maintenance_request.reset();
-            if (!result.ok)
+            if (!result.ok) {
+                weak_this->m_maintenance->SetLabel(_L("Maintenance: Raspberry tasks unavailable."));
                 return;
+            }
             try {
                 const auto tasks = nlohmann::json::parse(result.body);
-                if (!tasks.is_array() || tasks.empty()) {
+                if (!tasks.is_array())
+                    throw std::runtime_error("Maintenance tasks are not an array");
+                const int previous_selection = weak_this->m_maintenance_list->GetSelection();
+                weak_this->m_maintenance_rows.clear();
+                weak_this->m_maintenance_list->Clear();
+                for (const auto& task : tasks) {
+                    if (!task.is_object())
+                        continue;
+                    weak_this->m_maintenance_rows.emplace_back(task.dump());
+                    weak_this->m_maintenance_list->Append(wxString::Format(_L("%s · every %.0f h · %d min"),
+                        wx_from_utf8(task.value("title", "Service")), task.value("interval_hours", 0.0),
+                        task.value("estimated_minutes", 0)));
+                }
+                if (previous_selection != wxNOT_FOUND &&
+                    static_cast<size_t>(previous_selection) < weak_this->m_maintenance_rows.size())
+                    weak_this->m_maintenance_list->SetSelection(previous_selection);
+                weak_this->m_edit_maintenance->Enable(weak_this->m_may_manage_spools && !weak_this->m_maintenance_rows.empty());
+                if (tasks.empty()) {
                     weak_this->m_maintenance->SetLabel(_L("Maintenance: no tasks scheduled."));
                     return;
                 }
@@ -678,6 +720,97 @@ void QidiAdminDialog::refresh_maintenance()
             }
         });
     });
+}
+
+void QidiAdminDialog::edit_maintenance_task(bool create_new)
+{
+    if (!m_may_manage_spools || m_maintenance_write_request)
+        return;
+    nlohmann::json original = nlohmann::json::object();
+    if (!create_new) {
+        const int selection = m_maintenance_list->GetSelection();
+        if (selection == wxNOT_FOUND || static_cast<size_t>(selection) >= m_maintenance_rows.size()) {
+            m_maintenance->SetLabel(_L("Select a service task to edit."));
+            return;
+        }
+        try {
+            original = nlohmann::json::parse(m_maintenance_rows[selection]);
+        } catch (const std::exception&) {
+            m_maintenance->SetLabel(_L("Selected service task could not be parsed."));
+            return;
+        }
+    }
+    wxDialog dialog(this, wxID_ANY, create_new ? _L("Add service task") : _L("Edit service task"),
+        wxDefaultPosition, FromDIP(wxSize(460, 320)), wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+    auto* outer = new wxBoxSizer(wxVERTICAL);
+    auto* form = new wxFlexGridSizer(2, FromDIP(8), FromDIP(12));
+    form->AddGrowableCol(1, 1);
+    auto add_field = [&](const wxString& label, const wxString& value) {
+        form->Add(new wxStaticText(&dialog, wxID_ANY, label), 0, wxALIGN_CENTER_VERTICAL);
+        auto* field = new wxTextCtrl(&dialog, wxID_ANY, value);
+        form->Add(field, 1, wxEXPAND);
+        return field;
+    };
+    auto* title = add_field(_L("Task"), wx_from_utf8(original.value("title", "")));
+    auto* interval = add_field(_L("Interval, hours"),
+        wxString::Format("%.1f", original.value("interval_hours", 100.0)));
+    auto* minutes = add_field(_L("Estimated minutes"),
+        wxString::Format("%d", original.value("estimated_minutes", 5)));
+    form->Add(new wxStaticText(&dialog, wxID_ANY,
+        create_new ? _L("Starts now") : _L("Mark completed now")), 0, wxALIGN_CENTER_VERTICAL);
+    auto* completed = new wxCheckBox(&dialog, wxID_ANY, wxEmptyString);
+    completed->SetValue(create_new);
+    completed->Enable(!create_new);
+    form->Add(completed, 0);
+    outer->Add(form, 1, wxALL | wxEXPAND, FromDIP(16));
+    outer->Add(dialog.CreateButtonSizer(wxOK | wxCANCEL), 0, wxALL | wxALIGN_RIGHT, FromDIP(12));
+    dialog.SetSizerAndFit(outer);
+    wxGetApp().UpdateDarkUIWin(&dialog);
+    if (dialog.ShowModal() != wxID_OK)
+        return;
+    double interval_hours = 0.0;
+    long estimated_minutes = 0;
+    if (title->GetValue().Trim().empty() || !interval->GetValue().ToDouble(&interval_hours) ||
+        !minutes->GetValue().ToLong(&estimated_minutes) || interval_hours <= 0.0 ||
+        interval_hours > 100000.0 || estimated_minutes < 1 || estimated_minutes > 1440) {
+        wxMessageBox(_L("Check the task name, interval and estimated time."),
+            _L("Invalid service task"), wxOK | wxICON_WARNING, this);
+        return;
+    }
+    const std::string id = create_new
+        ? "service-" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count())
+        : original.value("id", "");
+    const std::string now = utf8_from_wx(wxDateTime::Now().ToUTC().FormatISOCombined('T') + "Z");
+    const std::string last_completed = completed->GetValue() || create_new
+        ? now : original.value("last_completed_at", now);
+    const nlohmann::json payload = {
+        {"id", id}, {"printer_id", "q2"}, {"title", utf8_from_wx(title->GetValue())},
+        {"interval_hours", interval_hours}, {"estimated_minutes", estimated_minutes},
+        {"last_completed_at", last_completed},
+    };
+    m_add_maintenance->Disable();
+    m_edit_maintenance->Disable();
+    const auto generation = m_access_generation;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_maintenance_write_request = QidiAdminGateway::upsert_maintenance_task(connection(), id, payload.dump(),
+        [weak_this, generation](QidiAdminResult result) {
+            wxTheApp->CallAfter([weak_this, generation, result = std::move(result)]() {
+                if (!weak_this)
+                    return;
+                weak_this->m_maintenance_write_request.reset();
+                if (generation != weak_this->m_access_generation)
+                    return;
+                weak_this->m_add_maintenance->Enable(weak_this->m_may_manage_spools);
+                weak_this->m_edit_maintenance->Enable(weak_this->m_may_manage_spools && !weak_this->m_maintenance_rows.empty());
+                if (!result.ok) {
+                    weak_this->m_maintenance->SetLabel(wxString::Format(_L("Could not save service task: HTTP %u"), result.status));
+                    return;
+                }
+                weak_this->m_maintenance->SetLabel(_L("Service task saved on Raspberry."));
+                weak_this->refresh_maintenance();
+            });
+        });
 }
 
 void QidiAdminDialog::refresh_print_history()
@@ -711,6 +844,95 @@ void QidiAdminDialog::refresh_print_history()
             }
         });
     });
+}
+
+void QidiAdminDialog::show_print_report()
+{
+    if (!m_may_manage_spools || m_print_report_request)
+        return;
+    wxArrayString periods;
+    periods.Add(_L("Last 7 days"));
+    periods.Add(_L("Last 30 days"));
+    periods.Add(_L("Last 90 days"));
+    wxSingleChoiceDialog period_dialog(this, _L("Choose report period"), _L("Print report"), periods);
+    period_dialog.SetSelection(1);
+    wxGetApp().UpdateDarkUIWin(&period_dialog);
+    if (period_dialog.ShowModal() != wxID_OK)
+        return;
+    static constexpr int days_options[] = {7, 30, 90};
+    const int selection = period_dialog.GetSelection();
+    if (selection < 0 || selection >= 3)
+        return;
+    m_print_report->Disable();
+    const auto generation = m_access_generation;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_print_report_request = QidiAdminGateway::fetch_print_report(connection(), days_options[selection],
+        [weak_this, generation](QidiAdminResult result) {
+            wxTheApp->CallAfter([weak_this, generation, result = std::move(result)]() {
+                if (!weak_this)
+                    return;
+                weak_this->m_print_report_request.reset();
+                if (generation != weak_this->m_access_generation)
+                    return;
+                weak_this->m_print_report->Enable(weak_this->m_may_manage_spools);
+                if (!result.ok) {
+                    weak_this->m_history->SetLabel(wxString::Format(_L("Print report unavailable: HTTP %u"), result.status));
+                    return;
+                }
+                try {
+                    const auto report = nlohmann::json::parse(result.body);
+                    const auto totals = report.at("totals");
+                    wxString body;
+                    body << wxString::Format(_L("Period: %d days\n\n"), report.value("days", 30));
+                    body << wxString::Format(_L("Prints: %d · completed: %d · failed: %d\n"),
+                        totals.value("jobs", 0), totals.value("completed", 0), totals.value("failed", 0));
+                    body << wxString::Format(_L("Print time: %.2f hours\nFilament: %.2f m / %.1f g\nMaterial cost: %.2f\n"),
+                        totals.value("durationHours", 0.0), totals.value("filamentMeters", 0.0),
+                        totals.value("materialWeightG", 0.0), totals.value("materialCost", 0.0));
+                    const auto material = report.find("material");
+                    if (material != report.end() && material->is_object()) {
+                        const auto groups = material->find("byMaterial");
+                        if (groups != material->end() && groups->is_array() && !groups->empty()) {
+                            body << _L("\nBy material:\n");
+                            for (const auto& group : *groups) {
+                                if (!group.is_object())
+                                    continue;
+                                const auto type_it = group.find("material_type");
+                                const std::string material_name = type_it != group.end() && type_it->is_string()
+                                    ? type_it->get<std::string>() : "Unknown";
+                                body << wxString::Format(_L("%s: %.1f g · %.2f\n"),
+                                    wx_from_utf8(material_name),
+                                    group.value("weight_g", 0.0), group.value("cost", 0.0));
+                            }
+                        }
+                    }
+                    const auto daily = report.find("daily");
+                    if (daily != report.end() && daily->is_array() && !daily->empty()) {
+                        body << _L("\nDaily prints:\n");
+                        for (const auto& day : *daily) {
+                            if (!day.is_object())
+                                continue;
+                            body << wxString::Format(_L("%s: %d prints · %d completed · %.1f h\n"),
+                                wx_from_utf8(day.value("date", "")), day.value("jobs", 0),
+                                day.value("completed", 0), day.value("durationHours", 0.0));
+                        }
+                    }
+                    wxDialog dialog(weak_this, wxID_ANY, _L("Q2 print and material report"),
+                        wxDefaultPosition, weak_this->FromDIP(wxSize(600, 520)), wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+                    auto* layout = new wxBoxSizer(wxVERTICAL);
+                    auto* text = new wxTextCtrl(&dialog, wxID_ANY, body, wxDefaultPosition,
+                        weak_this->FromDIP(wxSize(560, 450)), wxTE_MULTILINE | wxTE_READONLY);
+                    layout->Add(text, 1, wxALL | wxEXPAND, weak_this->FromDIP(12));
+                    layout->Add(dialog.CreateButtonSizer(wxOK), 0,
+                        wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_RIGHT, weak_this->FromDIP(12));
+                    dialog.SetSizer(layout);
+                    wxGetApp().UpdateDarkUIWin(&dialog);
+                    dialog.ShowModal();
+                } catch (const std::exception&) {
+                    weak_this->m_history->SetLabel(_L("Print report response could not be parsed."));
+                }
+            });
+        });
 }
 
 void QidiAdminDialog::refresh_diagnostics()
@@ -862,6 +1084,7 @@ void QidiAdminDialog::compare_klipper_backups()
     if (!m_may_manage_spools || m_klipper_backup_request)
         return;
     m_compare_klipper_backups->Disable();
+    m_print_report->Disable();
     const auto generation = m_access_generation;
     wxWeakRef<QidiAdminDialog> weak_this(this);
     m_klipper_backup_request = QidiAdminGateway::fetch_klipper_backups(connection(), [weak_this, generation](QidiAdminResult result) {
@@ -1005,6 +1228,13 @@ void QidiAdminDialog::invalidate_access_role()
     m_spool_list->Clear();
     m_spool_list->Append(_L("Connect to view Raspberry spools."));
     m_material->SetLabel(_L("Material: waiting for server access…"));
+    if (m_maintenance_request)
+        m_maintenance_request->cancel();
+    m_maintenance_request.reset();
+    m_maintenance_rows.clear();
+    m_maintenance_list->Clear();
+    m_maintenance_list->Append(_L("Connect to view service tasks."));
+    m_maintenance->SetLabel(_L("Maintenance: waiting for server access…"));
     m_diagnostics_json.clear();
     m_diagnostics_details->Disable();
     m_create_klipper_backup->Disable();
@@ -1021,6 +1251,8 @@ void QidiAdminDialog::invalidate_access_role()
     m_edit_macro->Disable();
     m_add_spool->Disable();
     m_edit_spool->Disable();
+    m_add_maintenance->Disable();
+    m_edit_maintenance->Disable();
     m_send_command->Disable();
     m_simulate_command->Disable();
     m_cancel_queued_command->Disable();
@@ -1058,8 +1290,11 @@ void QidiAdminDialog::refresh_access_role()
                 if (weak_this->m_edit_macro) weak_this->m_edit_macro->Enable(weak_this->m_may_manage_spools && !weak_this->m_macros.empty());
                 if (weak_this->m_add_spool) weak_this->m_add_spool->Enable(weak_this->m_may_manage_spools);
                 if (weak_this->m_edit_spool) weak_this->m_edit_spool->Enable(weak_this->m_may_manage_spools && !weak_this->m_spool_rows.empty());
+                if (weak_this->m_add_maintenance) weak_this->m_add_maintenance->Enable(weak_this->m_may_manage_spools);
+                if (weak_this->m_edit_maintenance) weak_this->m_edit_maintenance->Enable(weak_this->m_may_manage_spools && !weak_this->m_maintenance_rows.empty());
                 if (weak_this->m_create_klipper_backup) weak_this->m_create_klipper_backup->Enable(weak_this->m_may_manage_spools);
                 if (weak_this->m_compare_klipper_backups) weak_this->m_compare_klipper_backups->Enable(weak_this->m_may_manage_spools);
+                if (weak_this->m_print_report) weak_this->m_print_report->Enable(weak_this->m_may_manage_spools);
                 if (weak_this->m_send_command) weak_this->m_send_command->Enable(may_control);
                 if (weak_this->m_simulate_command) weak_this->m_simulate_command->Enable(may_control);
                 if (weak_this->m_cancel_queued_command) weak_this->m_cancel_queued_command->Enable(may_control);

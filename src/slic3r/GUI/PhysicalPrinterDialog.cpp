@@ -742,6 +742,12 @@ void PhysicalPrinterDialog::update(bool printer_change)
         } else {
             m_optgroup->hide_field("flashforge_serial_number");
         }        
+
+        if (opt->value == htQidiAdmin) {
+            // Qidi Admin credentials live in Windows Credential Manager via
+            // the native Admin tab, not in an exportable physical preset.
+            m_optgroup->hide_field("printhost_apikey");
+        }
         
         if (opt->value == htUltiMaker) {
                 m_optgroup->hide_field("printhost_apikey");
@@ -871,6 +877,8 @@ void PhysicalPrinterDialog::check_host_key_valid()
 
 void PhysicalPrinterDialog::OnOK(wxEvent& event)
 {
+    if (m_config->opt_enum<PrintHostType>("host_type") == htQidiAdmin)
+        m_config->opt_string("printhost_apikey") = "";
     wxGetApp().get_tab(Preset::TYPE_PRINTER)->save_preset("", false, false, true, m_preset_name);
     event.Skip();
 }

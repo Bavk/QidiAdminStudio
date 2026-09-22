@@ -19,21 +19,33 @@ namespace Slic3r {
 
 QidiAdminPrintHost::QidiAdminPrintHost(DynamicPrintConfig* config)
     : m_host(config->opt_string("print_host"))
-    , m_api_key(config->opt_string("printhost_apikey"))
+    // A physical-printer preset can be exported with a project. Never read a
+    // Qidi Admin control token from that shareable configuration.
+    , m_api_key()
     , m_ca_file(config->opt_string("printhost_cafile"))
     , m_ssl_revoke_best_effort(config->opt_bool("printhost_ssl_ignore_revoke"))
 {
     // The physical-printer profile may deliberately omit credentials because
     // presets are shareable.  The Admin dialog owns the global server address
-    // and keeps the API key in Windows Credential Manager, so use it only as
-    // a fallback. Per-printer values always take precedence.
+    // and keeps the API key in Windows Credential Manager. Never send that
+    // key to a different host named by a shareable printer preset.
+    const std::string admin_host = GUI::wxGetApp().app_config->get("qidi_admin", "endpoint");
     const bool using_admin_connection = m_host.empty();
-    if (using_admin_connection) {
-        m_host = GUI::wxGetApp().app_config->get("qidi_admin", "endpoint");
+    if (using_admin_connection)
+        m_host = admin_host;
+    const auto normalized_host = [](std::string value) {
+        if (!value.empty() && value.rfind("http://", 0) != 0 && value.rfind("https://", 0) != 0)
+            value = "https://" + value;
+        while (!value.empty() && value.back() == '/')
+            value.pop_back();
+        return value;
+    };
+    const bool same_admin_host = !admin_host.empty() && normalized_host(m_host) == normalized_host(admin_host);
+    if (using_admin_connection || same_admin_host) {
         m_verify_tls = GUI::wxGetApp().app_config->get("qidi_admin", "verify_tls") != "false";
+        if (m_api_key.empty())
+            m_api_key = GUI::QidiAdminCredentials::load_api_key();
     }
-    if (m_api_key.empty())
-        m_api_key = GUI::QidiAdminCredentials::load_api_key();
 }
 
 const char* QidiAdminPrintHost::get_name() const { return "Qidi Admin Server"; }
@@ -63,9 +75,10 @@ void QidiAdminPrintHost::set_auth(Http& http) const
         http.header("X-Api-Key", m_api_key);
     if (!m_ca_file.empty())
         http.ca_file(m_ca_file);
-    // The gateway carries a control token. Do not silently downgrade HTTPS.
-    if (m_host.rfind("https://", 0) == 0)
-        http.tls_verify(m_verify_tls);
+    // Scheme-less hosts are upgraded to HTTPS by make_url(), so apply the
+    // selected certificate policy even when the stored host omitted a scheme.
+    // This option has no effect for an explicit http:// LAN endpoint.
+    http.tls_verify(m_verify_tls);
 }
 
 bool QidiAdminPrintHost::test(wxString& message) const
@@ -204,14 +217,17 @@ bool QidiAdminPrintHost::upload(PrintHostUpload upload_data, ProgressFn progress
         return false;
     info_fn(_L("Qidi Admin"), _L("G-code uploaded through Raspberry gateway."));
 
+    // Upload-only is deliberately allowed even when the current printer is
+    // not ready to start (for example, no spool is selected). The server
+    // performs preflight again when a print start is requested later.
+    if (upload_data.post_action != PrintHostPostUploadAction::StartPrint)
+        return true;
+
     wxString preflight_error;
     if (!preflight(preflight_error, stored_filename)) {
         error_fn(std::move(preflight_error));
         return false;
     }
-    if (upload_data.post_action != PrintHostPostUploadAction::StartPrint)
-        return true;
-
     wxString start_error;
     if (!start_print(start_error, stored_filename)) {
         error_fn(std::move(start_error));

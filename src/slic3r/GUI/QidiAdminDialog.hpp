@@ -56,7 +56,9 @@ private:
     void                refresh_macros();
     void                edit_macro(bool create_new);
     void                refresh_maintenance();
+    void                edit_maintenance_task(bool create_new);
     void                refresh_print_history();
+    void                show_print_report();
     void                refresh_diagnostics();
     void                show_diagnostics_details();
     void                create_klipper_backup();
@@ -91,7 +93,11 @@ private:
     wxButton*           m_add_spool {nullptr};
     wxButton*           m_edit_spool {nullptr};
     wxStaticText*       m_maintenance {nullptr};
+    wxListBox*          m_maintenance_list {nullptr};
+    wxButton*           m_add_maintenance {nullptr};
+    wxButton*           m_edit_maintenance {nullptr};
     wxStaticText*       m_history {nullptr};
+    wxButton*           m_print_report {nullptr};
     wxStaticText*       m_diagnostics {nullptr};
     wxButton*           m_diagnostics_details {nullptr};
     wxButton*           m_create_klipper_backup {nullptr};
@@ -123,7 +129,9 @@ private:
     Http::Ptr           m_macro_request;
     Http::Ptr           m_macro_write_request;
     Http::Ptr           m_maintenance_request;
+    Http::Ptr           m_maintenance_write_request;
     Http::Ptr           m_history_request;
+    Http::Ptr           m_print_report_request;
     Http::Ptr           m_diagnostics_request;
     Http::Ptr           m_klipper_backup_request;
     Http::Ptr           m_events_request;
@@ -145,6 +153,7 @@ private:
     bool                m_may_manage_spools {false};
     std::vector<ServerMacro> m_macros;
     std::vector<std::string> m_spool_rows;
+    std::vector<std::string> m_maintenance_rows;
     std::vector<int>    m_queue_command_ids;
     std::vector<wxString> m_command_responses;
     std::string         m_diagnostics_json;
