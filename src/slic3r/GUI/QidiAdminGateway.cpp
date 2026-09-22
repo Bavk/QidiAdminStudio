@@ -204,7 +204,7 @@ Http::Ptr QidiAdminGateway::retry_queued_command(const QidiAdminConnection& conn
         .header("X-Api-Key", connection.api_key)
         .header("Accept", "application/json")
         .header("Content-Type", "application/json")
-        .set_post_body("{}")
+        .set_post_body(std::string("{}"))
         .on_complete([callback_holder](std::string body, unsigned status) {
             (*callback_holder)({status >= 200 && status < 300, status, std::move(body), {}});
         })
