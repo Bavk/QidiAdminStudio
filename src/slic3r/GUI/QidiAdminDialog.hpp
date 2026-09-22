@@ -123,6 +123,8 @@ private:
     wxButton*           m_apply_chamber {nullptr};
     wxButton*           m_light_on {nullptr};
     wxButton*           m_light_off {nullptr};
+    std::vector<wxButton*> m_assistant_actions;
+    wxString            m_printer_state;
     wxButton*           m_run_macro {nullptr};
     wxButton*           m_add_macro {nullptr};
     wxButton*           m_edit_macro {nullptr};

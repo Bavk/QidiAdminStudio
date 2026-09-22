@@ -288,6 +288,45 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     command_actions->Add(m_send_command, 0);
     layout->Add(command_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
+    start_page(_L("QIDI Q2 assistants"));
+    layout->Add(new wxStaticText(content, wxID_ANY,
+        _L("Guided Q2 maintenance actions. Clear the bed and check the toolhead before motion.")),
+        0, wxALL, FromDIP(16));
+    auto add_assistant_action = [this, content, layout](const wxString& title, const wxString& explanation,
+                                                        const std::string& script, bool moves_axes) {
+        auto* button = new wxButton(content, wxID_ANY, title);
+        button->Disable();
+        m_assistant_actions.push_back(button);
+        layout->Add(button, 0, wxLEFT | wxRIGHT | wxTOP, FromDIP(16));
+        layout->Add(new wxStaticText(content, wxID_ANY, explanation), 0,
+            wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+        button->Bind(wxEVT_BUTTON, [this, title, explanation, script, moves_axes](wxCommandEvent&) {
+            if (!m_may_control)
+                return;
+            const wxString state = m_printer_state.Lower();
+            if (moves_axes && state != "standby" && state != "complete" && state != "cancelled") {
+                wxMessageBox(_L("Wait until the printer is idle and its state is known before moving axes or calibrating."),
+                    _L("Printer is not idle"), wxOK | wxICON_WARNING, this);
+                return;
+            }
+            if (wxMessageBox(explanation + "\n\n" + _L("Send this action to QIDI Q2?"),
+                    title, wxYES_NO | wxICON_WARNING, this) != wxYES)
+                return;
+            send_command(script, 50, title, "Q2 assistants");
+        });
+    };
+    add_assistant_action(_L("Home all axes"),
+        _L("The toolhead and bed will move. Remove loose objects."), "G28", true);
+    add_assistant_action(_L("Align Z screws"),
+        _L("Clear the bed and clean the nozzle. Homing and Z_TILT_ADJUST will move the toolhead and bed."),
+        "G28\nZ_TILT_ADJUST", true);
+    add_assistant_action(_L("Calibrate bed mesh"),
+        _L("Clear and clean the bed. Homing, Z alignment and the full mesh probe will run."),
+        "G28\nZ_TILT_ADJUST\nBED_MESH_CALIBRATE", true);
+    add_assistant_action(_L("Turn off heaters and part fan"),
+        _L("Nozzle, bed, chamber and part-cooling fan targets will be reset to zero."),
+        "TURN_OFF_HEATERS\nM141 S0\nM107", false);
+
     finish_page();
     root_layout->Add(pages, 1, wxEXPAND);
     SetSizer(root_layout);
@@ -1337,6 +1376,8 @@ void QidiAdminDialog::invalidate_access_role()
     m_apply_chamber->Disable();
     m_light_on->Disable();
     m_light_off->Disable();
+    for (auto* action : m_assistant_actions)
+        action->Disable();
     m_run_macro->Disable();
     m_add_macro->Disable();
     m_edit_macro->Disable();
@@ -1381,6 +1422,8 @@ void QidiAdminDialog::refresh_access_role()
                 if (weak_this->m_apply_chamber) weak_this->m_apply_chamber->Enable(may_control);
                 if (weak_this->m_light_on) weak_this->m_light_on->Enable(may_control);
                 if (weak_this->m_light_off) weak_this->m_light_off->Enable(may_control);
+                for (auto* action : weak_this->m_assistant_actions)
+                    action->Enable(may_control);
                 if (weak_this->m_run_macro) weak_this->m_run_macro->Enable(may_control);
                 if (weak_this->m_add_macro) weak_this->m_add_macro->Enable(weak_this->m_may_manage_spools);
                 if (weak_this->m_edit_macro) weak_this->m_edit_macro->Enable(weak_this->m_may_manage_spools && !weak_this->m_macros.empty());
@@ -1883,6 +1926,7 @@ void QidiAdminDialog::show_result(const QidiAdminResult& result)
             const auto& extruder = printer.at("extruder");
             const auto& bed = printer.at("heater_bed");
             const wxString state = wx_from_utf8(print_stats.value("state", "unknown"));
+            m_printer_state = state;
             const double progress = display.value("progress", 0.0) * 100.0;
             const double elapsed = print_stats.value("print_duration", 0.0);
             const double remaining = progress > 0.5 && elapsed > 0.0
@@ -1903,11 +1947,13 @@ void QidiAdminDialog::show_result(const QidiAdminResult& result)
             m_status->SetLabel(wxString::Format(_L("%s · %.0f%%%s · Nozzle %.0f/%.0f°C · Bed %.0f/%.0f°C"),
                 state, progress, duration, nozzle, nozzle_target, bed_temp, bed_target));
         } catch (const std::exception&) {
+            m_printer_state.clear();
             m_status->SetLabel(wxString::Format(_L("Connected — HTTP %u."), result.status));
         }
         return;
     }
     const wxString detail = wx_from_utf8(result.error.empty() ? result.body : result.error);
+    m_printer_state.clear();
     m_status->SetLabel(wxString::Format(_L("Connection failed%s"), detail.empty() ? "." : ": " + detail));
 }
 
