@@ -83,6 +83,8 @@ private:
     wxButton*           m_pause {nullptr};
     wxButton*           m_resume {nullptr};
     wxButton*           m_stop {nullptr};
+    wxButton*           m_run_macro {nullptr};
+    wxButton*           m_send_command {nullptr};
     Http::Ptr           m_pending_request;
     Http::Ptr           m_status_request;
     Http::Ptr           m_material_request;

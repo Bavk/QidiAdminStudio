@@ -96,9 +96,9 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_macro_choice->SetMinSize(FromDIP(wxSize(330, -1)));
     m_macro_choice->Append(_L("Loading server macros…"));
     m_macro_choice->SetSelection(0);
-    auto* run_macro_button = new wxButton(this, wxID_ANY, _L("Run macro"));
+    m_run_macro = new wxButton(this, wxID_ANY, _L("Run macro"));
     macro_row->Add(m_macro_choice, 1, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
-    macro_row->Add(run_macro_button, 0);
+    macro_row->Add(m_run_macro, 0);
     layout->Add(macro_row, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
     m_camera = new wxStaticBitmap(this, wxID_ANY, wxNullBitmap, wxDefaultPosition, FromDIP(wxSize(480, 270)));
@@ -121,7 +121,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_command = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, FromDIP(wxSize(480, 72)), wxTE_MULTILINE);
     m_command->SetHint("SET_PIN PIN=caselight VALUE=1");
     layout->Add(m_command, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
-    auto* send_command_button = new wxButton(this, wxID_ANY, _L("Queue G-code"));
+    m_send_command = new wxButton(this, wxID_ANY, _L("Queue G-code"));
     auto* command_actions = new wxBoxSizer(wxHORIZONTAL);
     command_actions->Add(new wxStaticText(this, wxID_ANY, _L("Priority")), 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
     m_command_priority = new wxChoice(this, wxID_ANY);
@@ -137,7 +137,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_command_group->SetSelection(0);
     command_actions->Add(m_command_group, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
     command_actions->AddStretchSpacer();
-    command_actions->Add(send_command_button, 0);
+    command_actions->Add(m_send_command, 0);
     layout->Add(command_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
     auto* buttons = new wxStdDialogButtonSizer();
@@ -158,7 +158,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         if (wxMessageBox(_L("Immediately stop the printer?"), _L("Emergency stop"), wxYES_NO | wxICON_WARNING, this) == wxYES)
             send_command("M112", 100, _L("Emergency stop"));
     });
-    send_command_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+    m_send_command->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
         const std::string script = utf8_from_wx(m_command->GetValue());
         if (script.empty()) {
             m_status->SetLabel(_L("Enter G-code before queueing it."));
@@ -176,7 +176,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         send_command(script, priorities[priority_index], _L("G-code"), groups[group_index]);
         m_command->Clear();
     });
-    run_macro_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { run_selected_macro(); });
+    m_run_macro->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { run_selected_macro(); });
     cancel_command_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { cancel_selected_command(); });
     retry_command_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { retry_selected_command(); });
     Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { save_connection(); EndModal(wxID_OK); }, wxID_OK);
@@ -534,6 +534,12 @@ void QidiAdminDialog::refresh_access_role()
                 const auto payload = nlohmann::json::parse(result.body);
                 const wxString role = wx_from_utf8(payload.value("role", "unknown"));
                 weak_this->m_access_role->SetLabel(wxString::Format(_L("Access role: %s"), role));
+                const bool may_control = role == "admin" || role == "operator";
+                if (weak_this->m_pause) weak_this->m_pause->Enable(may_control);
+                if (weak_this->m_resume) weak_this->m_resume->Enable(may_control);
+                if (weak_this->m_stop) weak_this->m_stop->Enable(may_control);
+                if (weak_this->m_run_macro) weak_this->m_run_macro->Enable(may_control);
+                if (weak_this->m_send_command) weak_this->m_send_command->Enable(may_control);
             } catch (const std::exception&) {
                 weak_this->m_access_role->SetLabel(_L("Access role: response could not be parsed."));
             }
