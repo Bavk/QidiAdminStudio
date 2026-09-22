@@ -86,6 +86,48 @@ bool QidiAdminPrintHost::test(wxString& message) const
     return ok;
 }
 
+bool QidiAdminPrintHost::preflight(wxString& error_message, const std::string& filename) const
+{
+    bool ok = true;
+    std::string response;
+    auto http = Http::get(make_url("/api/v1/printer/preflight?filename=" + Http::url_encode(filename) + "&printer_id=q2"));
+    set_auth(http);
+    http.timeout_connect(5).timeout_max(20)
+        .on_complete([&](std::string body, unsigned) { response = std::move(body); })
+        .on_error([&](std::string body, std::string error, unsigned status) {
+            ok = false;
+            error_message = format_error(body, error, status);
+        })
+#ifdef WIN32
+        .ssl_revoke_best_effort(m_ssl_revoke_best_effort)
+#endif
+        .perform_sync();
+    if (!ok)
+        return false;
+
+    try {
+        std::stringstream stream(response);
+        pt::ptree report;
+        pt::read_json(stream, report);
+        if (report.get<bool>("readyToStart", false))
+            return true;
+        std::string issues;
+        if (const auto issue_list = report.get_child_optional("issues")) {
+            for (const auto& issue : *issue_list) {
+                if (!issues.empty())
+                    issues += "\n";
+                issues += issue.second.get_value<std::string>();
+            }
+        }
+        error_message = wxString::FromUTF8(
+            ("Raspberry blocked this print before upload." + (issues.empty() ? std::string() : "\n" + issues)).c_str());
+        return false;
+    } catch (const std::exception&) {
+        error_message = _L("Qidi Admin Server returned an invalid preflight response.");
+        return false;
+    }
+}
+
 bool QidiAdminPrintHost::start_print(wxString& error_message, const std::string& filename) const
 {
     pt::ptree request;
@@ -119,6 +161,11 @@ bool QidiAdminPrintHost::upload(PrintHostUpload upload_data, ProgressFn progress
     }
 
     const auto filename = upload_data.upload_path.filename().string();
+    wxString preflight_error;
+    if (!preflight(preflight_error, filename)) {
+        error_fn(std::move(preflight_error));
+        return false;
+    }
     bool ok = true;
     std::string stored_filename = filename;
     auto http = Http::post(make_url("/api/v1/files/upload"));

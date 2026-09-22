@@ -28,6 +28,7 @@ public:
 private:
     std::string make_url(const std::string& path) const;
     void set_auth(Http& http) const;
+    bool preflight(wxString& error_message, const std::string& filename) const;
     bool start_print(wxString& error_message, const std::string& filename) const;
 
     std::string m_host;
