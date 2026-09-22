@@ -1,10 +1,13 @@
 #include "QidiAdminDialog.hpp"
 
 #include <algorithm>
+#include <fstream>
+#include <stdexcept>
 
 #include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/choice.h>
+#include <wx/filedlg.h>
 #include <wx/listbox.h>
 #include <wx/mstream.h>
 #include <wx/scrolwin.h>
@@ -110,6 +113,12 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         wxDefaultPosition, FromDIP(wxSize(480, 66)), wxTE_MULTILINE | wxTE_READONLY);
     m_command_response->SetHint(_L("Select a command to view the Raspberry/Moonraker response."));
     layout->Add(m_command_response, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
+    auto* export_json = new wxButton(content, wxID_ANY, _L("Export JSON"));
+    auto* export_csv = new wxButton(content, wxID_ANY, _L("Export CSV"));
+    auto* export_actions = new wxBoxSizer(wxHORIZONTAL);
+    export_actions->Add(export_json, 0, wxRIGHT, FromDIP(8));
+    export_actions->Add(export_csv, 0);
+    layout->Add(export_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_RIGHT, FromDIP(16));
 
     auto* macro_row = new wxBoxSizer(wxHORIZONTAL);
     m_macro_choice = new wxChoice(content, wxID_ANY);
@@ -226,6 +235,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         }
         m_command_response->SetValue(m_command_responses[selection]);
     });
+    export_json->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { export_command_history(true); });
+    export_csv->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { export_command_history(false); });
     cancel_command_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { cancel_selected_command(); });
     retry_command_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { retry_selected_command(); });
     Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { save_connection(); EndModal(wxID_OK); }, wxID_OK);
@@ -334,7 +345,8 @@ void QidiAdminDialog::refresh_command_queue()
                 }
                 for (const auto& entry : entries) {
                     const wxString status = wx_from_utf8(entry.value("status", "unknown"));
-                    wxString script = wx_from_utf8(entry.value("script", ""));
+                    const wxString raw_script = wx_from_utf8(entry.value("script", ""));
+                    wxString script = raw_script;
                     script.Replace("\n", " ");
                     if (script.length() > 70)
                         script = script.Left(67) + "…";
@@ -369,6 +381,7 @@ void QidiAdminDialog::refresh_command_history()
                     return;
                 weak_this->m_command_log->Clear();
                 weak_this->m_command_responses.clear();
+                weak_this->m_command_history_entries.clear();
                 if (weak_this->m_command_response)
                     weak_this->m_command_response->Clear();
                 if (entries.empty()) {
@@ -376,7 +389,8 @@ void QidiAdminDialog::refresh_command_history()
                     return;
                 }
                 for (const auto& entry : entries) {
-                    wxString script = wx_from_utf8(entry.value("script", ""));
+                    const wxString raw_script = wx_from_utf8(entry.value("script", ""));
+                    wxString script = raw_script;
                     script.Replace("\n", " ");
                     if (script.length() > 62)
                         script = script.Left(59) + "…";
@@ -388,16 +402,67 @@ void QidiAdminDialog::refresh_command_history()
                     weak_this->m_command_log->Append(wxString::Format(
                         _L("[%s · %d ms] %s"), success ? _L("OK") : _L("ERROR"), latency, script));
                     weak_this->m_command_responses.emplace_back(std::move(response));
+                    weak_this->m_command_history_entries.push_back({raw_script, weak_this->m_command_responses.back(), success, latency});
                 }
             } catch (const std::exception&) {
                 weak_this->m_command_log->Clear();
                 weak_this->m_command_responses.clear();
+                weak_this->m_command_history_entries.clear();
                 if (weak_this->m_command_response)
                     weak_this->m_command_response->Clear();
                 weak_this->m_command_log->Append(_L("Command history response could not be parsed."));
             }
         });
     });
+}
+
+void QidiAdminDialog::export_command_history(bool json_format)
+{
+    if (m_command_history_entries.empty()) {
+        m_status->SetLabel(_L("No command history is available to export."));
+        return;
+    }
+    const wxString extension = json_format ? "json" : "csv";
+    const wxString wildcard = json_format ? _L("JSON files (*.json)|*.json") : _L("CSV files (*.csv)|*.csv");
+    wxFileDialog dialog(this, _L("Export command history"), wxEmptyString,
+        "qidi-admin-command-history." + extension, wildcard,
+        wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+    if (dialog.ShowModal() != wxID_OK)
+        return;
+
+    try {
+        if (json_format) {
+            nlohmann::json output = nlohmann::json::array();
+            for (const auto& entry : m_command_history_entries) {
+                output.push_back({
+                    {"script", utf8_from_wx(entry.script)},
+                    {"success", entry.success},
+                    {"latencyMs", entry.latency_ms},
+                    {"response", utf8_from_wx(entry.response)},
+                });
+            }
+            std::ofstream file(dialog.GetPath().ToStdWstring(), std::ios::binary);
+            file << output.dump(2);
+            if (!file)
+                throw std::runtime_error("write failed");
+        } else {
+            std::ofstream file(dialog.GetPath().ToStdWstring(), std::ios::binary);
+            file << "script,success,latency_ms,response\n";
+            const auto quote_csv = [](const wxString& value) {
+                wxString escaped = value;
+                escaped.Replace("\"", "\"\"");
+                return "\"" + escaped + "\"";
+            };
+            for (const auto& entry : m_command_history_entries)
+                file << utf8_from_wx(quote_csv(entry.script)) << ',' << (entry.success ? "true" : "false")
+                     << ',' << entry.latency_ms << ',' << utf8_from_wx(quote_csv(entry.response)) << '\n';
+            if (!file)
+                throw std::runtime_error("write failed");
+        }
+        m_status->SetLabel(wxString::Format(_L("Command history exported: %s"), dialog.GetPath()));
+    } catch (const std::exception&) {
+        m_status->SetLabel(_L("Command history export failed."));
+    }
 }
 
 void QidiAdminDialog::cancel_selected_command()

@@ -36,6 +36,12 @@ private:
         std::string script;
         bool requires_confirmation {true};
     };
+    struct CommandHistoryEntry {
+        wxString script;
+        wxString response;
+        bool success {false};
+        int latency_ms {-1};
+    };
 
     QidiAdminConnection connection() const;
     void                on_dpi_changed(const wxRect&) override { Fit(); Layout(); }
@@ -51,6 +57,7 @@ private:
     void                refresh_access_role();
     void                refresh_command_queue();
     void                refresh_command_history();
+    void                export_command_history(bool json_format);
     void                cancel_selected_command();
     void                retry_selected_command();
     void                simulate_command();
@@ -110,6 +117,7 @@ private:
     std::vector<ServerMacro> m_macros;
     std::vector<int>    m_queue_command_ids;
     std::vector<wxString> m_command_responses;
+    std::vector<CommandHistoryEntry> m_command_history_entries;
 };
 
 } // namespace Slic3r::GUI
