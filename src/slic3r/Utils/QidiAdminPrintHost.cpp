@@ -122,8 +122,14 @@ bool QidiAdminPrintHost::preflight(wxString& error_message, const std::string& f
                 issues += issue.second.get_value<std::string>();
             }
         }
+        // This validation runs after Moonraker has accepted the upload.  Be
+        // explicit about that fact: the file remains available on the
+        // Raspberry, but no start request was sent while a safety guard was
+        // failing.  Saying "before upload" here made users repeatedly upload
+        // the same G-code although the actionable issue was, for example, a
+        // missing active spool or an unavailable camera.
         error_message = wxString::FromUTF8(
-            ("Raspberry blocked this print before upload." + (issues.empty() ? std::string() : "\n" + issues)).c_str());
+            ("Raspberry accepted the file but blocked print start." + (issues.empty() ? std::string() : "\n" + issues)).c_str());
         return false;
     } catch (const std::exception&) {
         error_message = _L("Qidi Admin Server returned an invalid preflight response.");
