@@ -60,6 +60,7 @@ private:
     wxTextCtrl*         m_endpoint {nullptr};
     wxTextCtrl*         m_api_key {nullptr};
     wxTextCtrl*         m_command {nullptr};
+    wxChoice*           m_command_priority {nullptr};
     wxCheckBox*         m_verify_tls {nullptr};
     wxStaticText*       m_status {nullptr};
     wxStaticText*       m_material {nullptr};

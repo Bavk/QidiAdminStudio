@@ -116,7 +116,17 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_command->SetHint("SET_PIN PIN=caselight VALUE=1");
     layout->Add(m_command, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
     auto* send_command_button = new wxButton(this, wxID_ANY, _L("Queue G-code"));
-    layout->Add(send_command_button, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_RIGHT, FromDIP(16));
+    auto* command_actions = new wxBoxSizer(wxHORIZONTAL);
+    command_actions->Add(new wxStaticText(this, wxID_ANY, _L("Priority")), 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
+    m_command_priority = new wxChoice(this, wxID_ANY);
+    m_command_priority->Append(_L("Normal"));
+    m_command_priority->Append(_L("High"));
+    m_command_priority->Append(_L("Emergency"));
+    m_command_priority->SetSelection(0);
+    command_actions->Add(m_command_priority, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
+    command_actions->AddStretchSpacer();
+    command_actions->Add(send_command_button, 0);
+    layout->Add(command_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
     auto* buttons = new wxStdDialogButtonSizer();
     m_check = new wxButton(this, wxID_ANY, _L("Check server"));
@@ -142,7 +152,13 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
             m_status->SetLabel(_L("Enter G-code before queueing it."));
             return;
         }
-        send_command(script, 50, _L("G-code"));
+        static constexpr int priorities[] = {50, 80, 100};
+        const int selection = m_command_priority ? m_command_priority->GetSelection() : 0;
+        const size_t priority_index = selection >= 0 && selection < 3 ? static_cast<size_t>(selection) : 0;
+        if (priority_index == 2 &&
+            wxMessageBox(_L("Queue this terminal command as emergency priority?"), _L("Confirm priority"), wxYES_NO | wxICON_WARNING, this) != wxYES)
+            return;
+        send_command(script, priorities[priority_index], _L("G-code"));
         m_command->Clear();
     });
     run_macro_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { run_selected_macro(); });
