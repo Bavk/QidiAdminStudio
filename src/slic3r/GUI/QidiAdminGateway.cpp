@@ -81,6 +81,54 @@ Http::Ptr QidiAdminGateway::fetch_camera_snapshot(const QidiAdminConnection& con
     return request.perform();
 }
 
+Http::Ptr QidiAdminGateway::fetch_camera_stream_frame(const QidiAdminConnection& connection, ResultCallback callback)
+{
+    if (!is_valid_endpoint(connection.endpoint)) {
+        callback({false, 0, {}, "Qidi Admin Server URL must begin with http:// or https:// and contain a host."});
+        return nullptr;
+    }
+    if (connection.api_key.empty()) {
+        callback({false, 0, {}, "Qidi Admin Server API key is empty."});
+        return nullptr;
+    }
+
+    // Http owns the curl worker. A shared state guarantees that cancelling the
+    // multipart request after a completed frame cannot later report a second
+    // (spurious) cancellation error to the UI.
+    struct FrameState {
+        bool delivered {false};
+    };
+    auto state = std::make_shared<FrameState>();
+    auto callback_holder = std::make_shared<ResultCallback>(std::move(callback));
+    Http request = Http::get(normalized_endpoint(connection.endpoint) + "/api/v1/camera/stream");
+    request.timeout_connect(5).timeout_max(12).size_limit(8 * 1024 * 1024).tls_verify(connection.verify_tls)
+        .header("X-Api-Key", connection.api_key)
+        .header("Accept", "multipart/x-mixed-replace, image/jpeg")
+        .on_progress([state, callback_holder](Http::Progress progress, bool& cancel) {
+            const std::string& buffer = progress.buffer;
+            const size_t jpeg_start = buffer.rfind("\xFF\xD8");
+            if (jpeg_start == std::string::npos)
+                return;
+            const size_t jpeg_end = buffer.find("\xFF\xD9", jpeg_start + 2);
+            if (jpeg_end == std::string::npos)
+                return;
+            state->delivered = true;
+            (*callback_holder)({true, 200, buffer.substr(jpeg_start, jpeg_end - jpeg_start + 2), {}});
+            // Stop exactly at one frame. The next timer tick reconnects at the
+            // live edge, avoiding an ever-growing MJPEG buffer.
+            cancel = true;
+        })
+        .on_complete([state, callback_holder](std::string, unsigned status) {
+            if (!state->delivered)
+                (*callback_holder)({false, status, {}, "Camera stream ended before a JPEG frame arrived."});
+        })
+        .on_error([state, callback_holder](std::string body, std::string error, unsigned status) {
+            if (!state->delivered)
+                (*callback_holder)({false, status, std::move(body), std::move(error)});
+        });
+    return request.perform();
+}
+
 Http::Ptr QidiAdminGateway::fetch_materials(const QidiAdminConnection& connection, ResultCallback callback)
 {
     return request(connection, "/api/v1/materials/spools?printer_id=q2", nullptr, std::move(callback));

@@ -37,6 +37,10 @@ public:
     // cancellation from a UI owner is needed.
     static Http::Ptr fetch_status(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_camera_snapshot(const QidiAdminConnection& connection, ResultCallback callback);
+    // Opens the MJPEG endpoint and completes after its next full JPEG frame.
+    // Call again to continue playback; this keeps the shared HTTP client from
+    // buffering an unbounded multipart response.
+    static Http::Ptr fetch_camera_stream_frame(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_materials(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_macros(const QidiAdminConnection& connection, ResultCallback callback);
     static Http::Ptr fetch_maintenance_tasks(const QidiAdminConnection& connection, ResultCallback callback);

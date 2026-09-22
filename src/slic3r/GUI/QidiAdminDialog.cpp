@@ -151,22 +151,22 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         if (!QidiAdminGateway::is_valid_endpoint(value.endpoint) || value.api_key.empty())
             return;
         refresh_camera();
-        if (++m_refresh_ticks % 4 == 0)
+        if (++m_refresh_ticks % 8 == 0)
             refresh_status();
-        if (m_refresh_ticks % 8 == 0)
+        if (m_refresh_ticks % 16 == 0)
             refresh_command_queue();
-        if (m_refresh_ticks % 12 == 0)
+        if (m_refresh_ticks % 24 == 0)
             refresh_materials();
-        if (m_refresh_ticks % 20 == 0)
+        if (m_refresh_ticks % 40 == 0)
             refresh_macros();
-        if (m_refresh_ticks % 60 == 0)
+        if (m_refresh_ticks % 120 == 0)
             refresh_maintenance();
-        if (m_refresh_ticks % 30 == 0)
+        if (m_refresh_ticks % 60 == 0)
             refresh_print_history();
-        if (m_refresh_ticks % 30 == 0)
+        if (m_refresh_ticks % 60 == 0)
             refresh_diagnostics();
     }, m_camera_timer.GetId());
-    m_camera_timer.Start(500);
+    m_camera_timer.Start(250);
     const QidiAdminConnection saved_connection = connection();
     if (QidiAdminGateway::is_valid_endpoint(saved_connection.endpoint) && !saved_connection.api_key.empty()) {
         refresh_status();
@@ -549,7 +549,7 @@ void QidiAdminDialog::refresh_camera()
     if (m_camera_request || !m_camera)
         return;
     wxWeakRef<QidiAdminDialog> weak_this(this);
-    m_camera_request = QidiAdminGateway::fetch_camera_snapshot(connection(), [weak_this](QidiAdminResult result) {
+    m_camera_request = QidiAdminGateway::fetch_camera_stream_frame(connection(), [weak_this](QidiAdminResult result) {
         wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
             if (!weak_this)
                 return;
