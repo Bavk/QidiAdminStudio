@@ -51,7 +51,8 @@ private:
     void                cancel_selected_command();
     void                retry_selected_command();
     void                run_selected_macro();
-    void                send_command(const std::string& script, int priority, const wxString& action);
+    void                send_command(const std::string& script, int priority, const wxString& action,
+                                     const std::string& queue_group = "Qidi Admin Studio");
     void                refresh_camera();
     void                refresh_camera_snapshot();
     void                show_camera_frame(const QidiAdminResult& result);
@@ -61,6 +62,7 @@ private:
     wxTextCtrl*         m_api_key {nullptr};
     wxTextCtrl*         m_command {nullptr};
     wxChoice*           m_command_priority {nullptr};
+    wxChoice*           m_command_group {nullptr};
     wxCheckBox*         m_verify_tls {nullptr};
     wxStaticText*       m_status {nullptr};
     wxStaticText*       m_material {nullptr};

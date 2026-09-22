@@ -57,6 +57,7 @@ public:
     static Http::Ptr enqueue_command(const QidiAdminConnection& connection,
                                      const std::string& script,
                                      int priority,
+                                     const std::string& queue_group,
                                      ResultCallback callback);
 
 private:

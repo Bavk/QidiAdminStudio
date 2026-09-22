@@ -231,6 +231,7 @@ Http::Ptr QidiAdminGateway::preflight(const QidiAdminConnection& connection,
 Http::Ptr QidiAdminGateway::enqueue_command(const QidiAdminConnection& connection,
                                             const std::string& script,
                                             int priority,
+                                            const std::string& queue_group,
                                             ResultCallback callback)
 {
     if (script.empty()) {
@@ -240,7 +241,7 @@ Http::Ptr QidiAdminGateway::enqueue_command(const QidiAdminConnection& connectio
     const nlohmann::json payload = {
         {"script", script},
         {"printer_id", "q2"},
-        {"queue_group", "Qidi Admin Studio"},
+        {"queue_group", queue_group.empty() ? "Qidi Admin Studio" : queue_group},
         {"priority", std::clamp(priority, 0, 100)},
     };
     const std::string body = payload.dump();

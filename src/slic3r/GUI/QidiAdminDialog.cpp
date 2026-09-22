@@ -124,6 +124,12 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_command_priority->Append(_L("Emergency"));
     m_command_priority->SetSelection(0);
     command_actions->Add(m_command_priority, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
+    m_command_group = new wxChoice(this, wxID_ANY);
+    m_command_group->Append(_L("Manual"));
+    m_command_group->Append(_L("Camera and lighting"));
+    m_command_group->Append(_L("Calibration"));
+    m_command_group->SetSelection(0);
+    command_actions->Add(m_command_group, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
     command_actions->AddStretchSpacer();
     command_actions->Add(send_command_button, 0);
     layout->Add(command_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
@@ -158,7 +164,10 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         if (priority_index == 2 &&
             wxMessageBox(_L("Queue this terminal command as emergency priority?"), _L("Confirm priority"), wxYES_NO | wxICON_WARNING, this) != wxYES)
             return;
-        send_command(script, priorities[priority_index], _L("G-code"));
+        static constexpr const char* groups[] = {"Manual", "Camera and lighting", "Calibration"};
+        const int group_selection = m_command_group ? m_command_group->GetSelection() : 0;
+        const size_t group_index = group_selection >= 0 && group_selection < 3 ? static_cast<size_t>(group_selection) : 0;
+        send_command(script, priorities[priority_index], _L("G-code"), groups[group_index]);
         m_command->Clear();
     });
     run_macro_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { run_selected_macro(); });
@@ -593,11 +602,11 @@ void QidiAdminDialog::refresh_status(bool announce)
         show_result({false, 0, {}, _L("Connection settings are incomplete.").ToUTF8().data()});
 }
 
-void QidiAdminDialog::send_command(const std::string& script, int priority, const wxString& action)
+void QidiAdminDialog::send_command(const std::string& script, int priority, const wxString& action, const std::string& queue_group)
 {
     m_status->SetLabel(wxString::Format(_L("Sending: %s…"), action));
     wxWeakRef<QidiAdminDialog> weak_this(this);
-    m_pending_request = QidiAdminGateway::enqueue_command(connection(), script, priority, [weak_this, action](QidiAdminResult result) {
+    m_pending_request = QidiAdminGateway::enqueue_command(connection(), script, priority, queue_group, [weak_this, action](QidiAdminResult result) {
         wxTheApp->CallAfter([weak_this, action, result = std::move(result)]() {
             if (!weak_this)
                 return;
