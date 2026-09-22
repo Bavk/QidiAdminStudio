@@ -47,6 +47,7 @@ private:
     void                refresh_print_history();
     void                refresh_diagnostics();
     void                refresh_command_queue();
+    void                refresh_command_history();
     void                cancel_selected_command();
     void                retry_selected_command();
     void                run_selected_macro();
@@ -66,6 +67,7 @@ private:
     wxStaticText*       m_history {nullptr};
     wxStaticText*       m_diagnostics {nullptr};
     wxListBox*          m_queue {nullptr};
+    wxListBox*          m_command_log {nullptr};
     wxChoice*           m_macro_choice {nullptr};
     wxStaticBitmap*     m_camera {nullptr};
     wxButton*           m_check {nullptr};
@@ -80,6 +82,7 @@ private:
     Http::Ptr           m_history_request;
     Http::Ptr           m_diagnostics_request;
     Http::Ptr           m_queue_request;
+    Http::Ptr           m_command_history_request;
     Http::Ptr           m_queue_cancel_request;
     Http::Ptr           m_queue_retry_request;
     Http::Ptr           m_camera_request;

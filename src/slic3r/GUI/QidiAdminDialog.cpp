@@ -81,6 +81,12 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     queue_actions->Add(cancel_command_button, 0);
     layout->Add(queue_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_RIGHT, FromDIP(16));
 
+    layout->Add(new wxStaticText(this, wxID_ANY, _L("Server command log")), 0,
+        wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    m_command_log = new wxListBox(this, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(480, 76)));
+    m_command_log->Append(_L("Loading command log…"));
+    layout->Add(m_command_log, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
+
     auto* macro_row = new wxBoxSizer(wxHORIZONTAL);
     m_macro_choice = new wxChoice(this, wxID_ANY);
     m_macro_choice->SetMinSize(FromDIP(wxSize(330, -1)));
@@ -155,6 +161,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
             refresh_status();
         if (m_refresh_ticks % 16 == 0)
             refresh_command_queue();
+        if (m_refresh_ticks % 20 == 0)
+            refresh_command_history();
         if (m_refresh_ticks % 24 == 0)
             refresh_materials();
         if (m_refresh_ticks % 40 == 0)
@@ -176,6 +184,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         refresh_print_history();
         refresh_diagnostics();
         refresh_command_queue();
+        refresh_command_history();
     }
     wxGetApp().UpdateDlgDarkUI(this);
 }
@@ -199,6 +208,8 @@ QidiAdminDialog::~QidiAdminDialog()
         m_diagnostics_request->cancel();
     if (m_queue_request)
         m_queue_request->cancel();
+    if (m_command_history_request)
+        m_command_history_request->cancel();
     if (m_queue_cancel_request)
         m_queue_cancel_request->cancel();
     if (m_queue_retry_request)
@@ -243,6 +254,45 @@ void QidiAdminDialog::refresh_command_queue()
                 weak_this->m_queue->Clear();
                 weak_this->m_queue_command_ids.clear();
                 weak_this->m_queue->Append(_L("Command queue response could not be parsed."));
+            }
+        });
+    });
+}
+
+void QidiAdminDialog::refresh_command_history()
+{
+    if (m_command_history_request || !m_command_log)
+        return;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_command_history_request = QidiAdminGateway::fetch_command_history(connection(), [weak_this](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_command_history_request.reset();
+            if (!result.ok)
+                return;
+            try {
+                const auto entries = nlohmann::json::parse(result.body);
+                if (!entries.is_array())
+                    return;
+                weak_this->m_command_log->Clear();
+                if (entries.empty()) {
+                    weak_this->m_command_log->Append(_L("No server command history yet."));
+                    return;
+                }
+                for (const auto& entry : entries) {
+                    wxString script = wx_from_utf8(entry.value("script", ""));
+                    script.Replace("\n", " ");
+                    if (script.length() > 62)
+                        script = script.Left(59) + "…";
+                    const bool success = entry.value("success", 0) != 0;
+                    const int latency = entry.value("latency_ms", -1);
+                    weak_this->m_command_log->Append(wxString::Format(
+                        _L("[%s · %d ms] %s"), success ? _L("OK") : _L("ERROR"), latency, script));
+                }
+            } catch (const std::exception&) {
+                weak_this->m_command_log->Clear();
+                weak_this->m_command_log->Append(_L("Command history response could not be parsed."));
             }
         });
     });

@@ -159,6 +159,11 @@ Http::Ptr QidiAdminGateway::fetch_command_queue(const QidiAdminConnection& conne
     return request(connection, "/api/v1/command-queue?limit=12", nullptr, std::move(callback));
 }
 
+Http::Ptr QidiAdminGateway::fetch_command_history(const QidiAdminConnection& connection, ResultCallback callback)
+{
+    return request(connection, "/api/v1/commands?limit=12", nullptr, std::move(callback));
+}
+
 Http::Ptr QidiAdminGateway::cancel_queued_command(const QidiAdminConnection& connection, int command_id, ResultCallback callback)
 {
     if (command_id <= 0) {
