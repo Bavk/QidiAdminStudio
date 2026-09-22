@@ -155,6 +155,9 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     buttons->Realize();
     layout->Add(buttons, 0, wxALL | wxALIGN_RIGHT, FromDIP(12));
     content->SetSizer(layout);
+    // Explicitly calculate the virtual size. This is required for reliable
+    // vertical scrolling with some wxWidgets Windows builds.
+    layout->FitInside(content);
     content->SetMinSize(FromDIP(wxSize(520, 580)));
     root_layout->Add(content, 1, wxEXPAND);
     SetSizer(root_layout);
