@@ -787,7 +787,7 @@ jobs:
       # The build has just touched everything it can use, so an object
       # untouched for a week is dead, usually orphaned by a flag change.
       - name: Compiler cache statistics
-        if: ${{ false }}
+        if: ${{ always() && !inputs.macos-combine-only && steps.ccache.outcome == 'success' }}
         shell: bash
         run: |
           ccache --evict-older-than 7d
@@ -800,14 +800,14 @@ jobs:
       # finish does not, since the directory may be a truncated copy.
       - name: Save compiler cache
         id: ccache_save
-        if: ${{ false }}
+        if: ${{ always() && !inputs.macos-combine-only && steps.ccache_restore.outcome == 'success' && github.event_name != 'pull_request' }}
         uses: actions/cache/save@v6
         with:
           path: ${{ github.workspace }}/.ccache
           key: ${{ env.CCACHE_ENTRY }}
 
       - name: Drop older compiler cache entries
-        if: ${{ false }}
+        if: ${{ always() && steps.ccache_save.outcome == 'success' }}
         # A read-only token (fork PRs) cannot delete; that only costs storage.
         # Older means a lower run id, so two runs finishing close together keep
         # the newer entry whichever of them cleans up last.
