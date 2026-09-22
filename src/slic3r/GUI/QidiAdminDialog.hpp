@@ -95,6 +95,8 @@ private:
     wxButton*           m_run_macro {nullptr};
     wxButton*           m_send_command {nullptr};
     wxButton*           m_simulate_command {nullptr};
+    wxButton*           m_cancel_queued_command {nullptr};
+    wxButton*           m_retry_queued_command {nullptr};
     Http::Ptr           m_pending_request;
     Http::Ptr           m_status_request;
     Http::Ptr           m_material_request;

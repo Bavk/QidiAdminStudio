@@ -97,11 +97,13 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_queue = new wxListBox(content, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(480, 84)));
     m_queue->Append(_L("Loading queue…"));
     layout->Add(m_queue, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
-    auto* cancel_command_button = new wxButton(content, wxID_ANY, _L("Cancel selected queued command"));
-    auto* retry_command_button = new wxButton(content, wxID_ANY, _L("Retry selected failed command"));
+    m_cancel_queued_command = new wxButton(content, wxID_ANY, _L("Cancel selected queued command"));
+    m_retry_queued_command = new wxButton(content, wxID_ANY, _L("Retry selected failed command"));
+    m_cancel_queued_command->Disable();
+    m_retry_queued_command->Disable();
     auto* queue_actions = new wxBoxSizer(wxHORIZONTAL);
-    queue_actions->Add(retry_command_button, 0, wxRIGHT, FromDIP(8));
-    queue_actions->Add(cancel_command_button, 0);
+    queue_actions->Add(m_retry_queued_command, 0, wxRIGHT, FromDIP(8));
+    queue_actions->Add(m_cancel_queued_command, 0);
     layout->Add(queue_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_RIGHT, FromDIP(16));
 
     layout->Add(new wxStaticText(content, wxID_ANY, _L("Server command log")), 0,
@@ -251,8 +253,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     });
     export_json->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { export_command_history(true); });
     export_csv->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { export_command_history(false); });
-    cancel_command_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { cancel_selected_command(); });
-    retry_command_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { retry_selected_command(); });
+    m_cancel_queued_command->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { cancel_selected_command(); });
+    m_retry_queued_command->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { retry_selected_command(); });
     Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { save_connection(); EndModal(wxID_OK); }, wxID_OK);
     Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
         // Do not continuously create failing requests while the connection
@@ -351,6 +353,10 @@ void QidiAdminDialog::refresh_command_queue()
                 const auto entries = nlohmann::json::parse(result.body);
                 if (!entries.is_array())
                     return;
+                const int previous_selection = weak_this->m_queue->GetSelection();
+                const int selected_command_id = previous_selection != wxNOT_FOUND &&
+                    static_cast<size_t>(previous_selection) < weak_this->m_queue_command_ids.size()
+                    ? weak_this->m_queue_command_ids[previous_selection] : 0;
                 weak_this->m_queue->Clear();
                 weak_this->m_queue_command_ids.clear();
                 if (entries.empty()) {
@@ -366,7 +372,10 @@ void QidiAdminDialog::refresh_command_queue()
                         script = script.Left(67) + "…";
                     const int priority = entry.value("priority", 0);
                     weak_this->m_queue->Append(wxString::Format(_L("[%s · P%d] %s"), status, priority, script));
-                    weak_this->m_queue_command_ids.emplace_back(entry.value("id", 0));
+                    const int command_id = entry.value("id", 0);
+                    weak_this->m_queue_command_ids.emplace_back(command_id);
+                    if (command_id > 0 && command_id == selected_command_id)
+                        weak_this->m_queue->SetSelection(static_cast<int>(weak_this->m_queue_command_ids.size() - 1));
                 }
             } catch (const std::exception&) {
                 weak_this->m_queue->Clear();
@@ -721,6 +730,8 @@ void QidiAdminDialog::refresh_access_role()
                 if (weak_this->m_run_macro) weak_this->m_run_macro->Enable(may_control);
                 if (weak_this->m_send_command) weak_this->m_send_command->Enable(may_control);
                 if (weak_this->m_simulate_command) weak_this->m_simulate_command->Enable(may_control);
+                if (weak_this->m_cancel_queued_command) weak_this->m_cancel_queued_command->Enable(may_control);
+                if (weak_this->m_retry_queued_command) weak_this->m_retry_queued_command->Enable(may_control);
             } catch (const std::exception&) {
                 weak_this->m_access_role->SetLabel(_L("Access role: response could not be parsed."));
             }
