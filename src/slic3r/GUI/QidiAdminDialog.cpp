@@ -13,6 +13,7 @@
 #include <wx/filedlg.h>
 #include <wx/listbox.h>
 #include <wx/mstream.h>
+#include <wx/notebook.h>
 #include <wx/scrolwin.h>
 #include <wx/sizer.h>
 #include <wx/statbmp.h>
@@ -56,12 +57,27 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     : wxPanel(parent, wxID_ANY)
     , m_camera_timer(this)
 {
-    // The native tab contains a live video feed, queues and a terminal.
-    // Its scrolled child keeps the controls reachable on laptop screens.
+    // Keep the slicer and the admin tools in one native application, while
+    // giving each admin workflow its own screen instead of one long form.
     auto* root_layout = new wxBoxSizer(wxVERTICAL);
-    auto* content = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL | wxTAB_TRAVERSAL);
-    content->SetScrollRate(0, FromDIP(12));
-    auto* layout = new wxBoxSizer(wxVERTICAL);
+    auto* pages = new wxNotebook(this, wxID_ANY);
+    wxScrolledWindow* content = nullptr;
+    wxBoxSizer* layout = nullptr;
+    auto finish_page = [&]() {
+        if (content == nullptr)
+            return;
+        content->SetSizer(layout);
+        layout->FitInside(content);
+        content->SetMinSize(FromDIP(wxSize(520, -1)));
+    };
+    auto start_page = [&](const wxString& title) {
+        finish_page();
+        content = new wxScrolledWindow(pages, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL | wxTAB_TRAVERSAL);
+        content->SetScrollRate(0, FromDIP(12));
+        layout = new wxBoxSizer(wxVERTICAL);
+        pages->AddPage(content, title);
+    };
+    start_page(_L("Connection"));
     layout->Add(new wxStaticText(content, wxID_ANY, _L("Connect Orca prepare and preview to your Raspberry Qidi Admin Server.")), 0, wxALL, FromDIP(16));
 
     auto* form = new wxFlexGridSizer(2, FromDIP(10), FromDIP(10));
@@ -80,8 +96,16 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_verify_tls->SetValue(wxGetApp().app_config->get("qidi_admin", "verify_tls") != "false");
     layout->Add(m_verify_tls, 0, wxALL, FromDIP(16));
 
-    m_status = new wxStaticText(content, wxID_ANY, _L("Not checked yet."));
-    layout->Add(m_status, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    m_status = new wxStaticText(this, wxID_ANY, _L("Not checked yet."));
+    root_layout->Add(m_status, 0, wxLEFT | wxRIGHT | wxTOP | wxBOTTOM, FromDIP(12));
+    auto* buttons = new wxBoxSizer(wxHORIZONTAL);
+    m_check = new wxButton(content, wxID_ANY, _L("Check server"));
+    auto* save_button = new wxButton(content, wxID_ANY, _L("Save connection"));
+    buttons->Add(m_check, 0, wxRIGHT, FromDIP(8));
+    buttons->Add(save_button, 0);
+    layout->Add(buttons, 0, wxALL | wxALIGN_RIGHT, FromDIP(12));
+
+    start_page(_L("Materials"));
     m_material = new wxStaticText(content, wxID_ANY, _L("Material: loading from Raspberry…"));
     layout->Add(m_material, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     layout->Add(new wxStaticText(content, wxID_ANY, _L("Spool catalog on Raspberry")), 0,
@@ -97,6 +121,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     spool_actions->Add(m_add_spool, 0, wxRIGHT, FromDIP(8));
     spool_actions->Add(m_edit_spool, 0);
     layout->Add(spool_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    start_page(_L("Maintenance and reports"));
     m_maintenance = new wxStaticText(content, wxID_ANY, _L("Maintenance: loading from Raspberry…"));
     layout->Add(m_maintenance, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_maintenance_list = new wxListBox(content, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(480, 84)));
@@ -133,6 +158,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_access_role = new wxStaticText(content, wxID_ANY, _L("Access role: checking…"));
     layout->Add(m_access_role, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
 
+    start_page(_L("Commands and macros"));
     layout->Add(new wxStaticText(content, wxID_ANY, _L("Raspberry command queue")), 0,
         wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_queue = new wxListBox(content, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(480, 84)));
@@ -180,6 +206,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     macro_row->Add(m_edit_macro, 0);
     layout->Add(macro_row, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
+    start_page(_L("Camera"));
+    const int camera_page = pages->GetPageCount() - 1;
     m_camera = new wxStaticBitmap(content, wxID_ANY, wxNullBitmap, wxDefaultPosition, FromDIP(wxSize(480, 270)));
     m_camera->SetMinSize(FromDIP(wxSize(480, 270)));
     layout->Add(m_camera, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_CENTER_HORIZONTAL, FromDIP(16));
@@ -188,6 +216,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_save_camera_snapshot = new wxButton(content, wxID_ANY, _L("Save full-resolution snapshot…"));
     layout->Add(m_save_camera_snapshot, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_CENTER_HORIZONTAL, FromDIP(16));
 
+    start_page(_L("Printer control"));
     auto* quick_actions = new wxBoxSizer(wxHORIZONTAL);
     m_pause = new wxButton(content, wxID_ANY, _L("Pause"));
     m_resume = new wxButton(content, wxID_ANY, _L("Resume"));
@@ -231,18 +260,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     command_actions->Add(m_send_command, 0);
     layout->Add(command_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
-    auto* buttons = new wxBoxSizer(wxHORIZONTAL);
-    m_check = new wxButton(content, wxID_ANY, _L("Check server"));
-    auto* save_button = new wxButton(content, wxID_ANY, _L("Save connection"));
-    buttons->Add(m_check, 0, wxRIGHT, FromDIP(8));
-    buttons->Add(save_button, 0);
-    layout->Add(buttons, 0, wxALL | wxALIGN_RIGHT, FromDIP(12));
-    content->SetSizer(layout);
-    // Explicitly calculate the virtual size. This is required for reliable
-    // vertical scrolling with some wxWidgets Windows builds.
-    layout->FitInside(content);
-    content->SetMinSize(FromDIP(wxSize(520, -1)));
-    root_layout->Add(content, 1, wxEXPAND);
+    finish_page();
+    root_layout->Add(pages, 1, wxEXPAND);
     SetSizer(root_layout);
     SetMinSize(FromDIP(wxSize(520, 480)));
 
@@ -320,13 +339,27 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         m_status->SetLabel(_L("Server connection saved."));
         check_connection();
     });
-    Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
+    pages->Bind(wxEVT_NOTEBOOK_PAGE_CHANGED, [this, pages, camera_page](wxBookCtrlEvent& event) {
+        if (pages->GetSelection() == camera_page && m_camera_timer.IsRunning())
+            refresh_camera();
+        else {
+            ++m_camera_generation;
+            if (m_camera_request)
+                m_camera_request->cancel();
+            m_camera_request.reset();
+            m_camera_last_frame = {};
+            m_camera_fps = 0.0;
+        }
+        event.Skip();
+    });
+    Bind(wxEVT_TIMER, [this, pages, camera_page](wxTimerEvent&) {
         // Do not continuously create failing requests while the connection
         // form is still empty. This tab also serves as first-run setup.
         const QidiAdminConnection value = connection();
         if (!QidiAdminGateway::is_valid_endpoint(value.endpoint))
             return;
-        refresh_camera();
+        if (pages->GetSelection() == camera_page)
+            refresh_camera();
         if (++m_refresh_ticks % 8 == 0)
             refresh_status();
         if (m_refresh_ticks % 16 == 0)
