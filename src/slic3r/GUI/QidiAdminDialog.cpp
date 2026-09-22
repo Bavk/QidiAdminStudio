@@ -138,6 +138,12 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
             refresh_macros();
     }, m_camera_timer.GetId());
     m_camera_timer.Start(500);
+    const QidiAdminConnection saved_connection = connection();
+    if (QidiAdminGateway::is_valid_endpoint(saved_connection.endpoint) && !saved_connection.api_key.empty()) {
+        refresh_status();
+        refresh_materials();
+        refresh_macros();
+    }
     wxGetApp().UpdateDlgDarkUI(this);
 }
 
