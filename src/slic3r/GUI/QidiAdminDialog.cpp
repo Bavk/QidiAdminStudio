@@ -64,6 +64,10 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     layout->Add(m_material, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_maintenance = new wxStaticText(this, wxID_ANY, _L("Maintenance: loading from Raspberry…"));
     layout->Add(m_maintenance, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    m_history = new wxStaticText(this, wxID_ANY, _L("Print history: loading from Raspberry…"));
+    layout->Add(m_history, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+    m_diagnostics = new wxStaticText(this, wxID_ANY, _L("Raspberry health: loading…"));
+    layout->Add(m_diagnostics, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
 
     layout->Add(new wxStaticText(this, wxID_ANY, _L("Raspberry command queue")), 0,
         wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
@@ -157,6 +161,10 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
             refresh_macros();
         if (m_refresh_ticks % 60 == 0)
             refresh_maintenance();
+        if (m_refresh_ticks % 30 == 0)
+            refresh_print_history();
+        if (m_refresh_ticks % 30 == 0)
+            refresh_diagnostics();
     }, m_camera_timer.GetId());
     m_camera_timer.Start(500);
     const QidiAdminConnection saved_connection = connection();
@@ -165,6 +173,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         refresh_materials();
         refresh_macros();
         refresh_maintenance();
+        refresh_print_history();
+        refresh_diagnostics();
         refresh_command_queue();
     }
     wxGetApp().UpdateDlgDarkUI(this);
@@ -183,6 +193,10 @@ QidiAdminDialog::~QidiAdminDialog()
         m_macro_request->cancel();
     if (m_maintenance_request)
         m_maintenance_request->cancel();
+    if (m_history_request)
+        m_history_request->cancel();
+    if (m_diagnostics_request)
+        m_diagnostics_request->cancel();
     if (m_queue_request)
         m_queue_request->cancel();
     if (m_queue_cancel_request)
@@ -312,6 +326,71 @@ void QidiAdminDialog::refresh_maintenance()
                 weak_this->m_maintenance->SetLabel(wxString::Format(_L("Maintenance: %zu tasks · latest: %s (%d min)"), tasks.size(), title, minutes));
             } catch (const std::exception&) {
                 weak_this->m_maintenance->SetLabel(_L("Maintenance: response could not be parsed."));
+            }
+        });
+    });
+}
+
+void QidiAdminDialog::refresh_print_history()
+{
+    if (m_history_request)
+        return;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_history_request = QidiAdminGateway::fetch_print_history(connection(), [weak_this](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_history_request.reset();
+            if (!result.ok)
+                return;
+            try {
+                const auto payload = nlohmann::json::parse(result.body);
+                const auto result_it = payload.find("result");
+                const auto jobs_it = result_it == payload.end() ? payload.end() : result_it->find("jobs");
+                if (jobs_it == payload.end() || !jobs_it->is_array() || jobs_it->empty()) {
+                    weak_this->m_history->SetLabel(_L("Print history: no completed jobs on Raspberry."));
+                    return;
+                }
+                const auto& job = jobs_it->front();
+                const wxString filename = wx_from_utf8(job.value("filename", "Unknown file"));
+                const wxString status = wx_from_utf8(job.value("status", "unknown"));
+                const double duration = job.value("print_duration", job.value("total_duration", 0.0));
+                weak_this->m_history->SetLabel(wxString::Format(
+                    _L("Last print: %s · %s · %.0f min"), filename, status, duration / 60.0));
+            } catch (const std::exception&) {
+                weak_this->m_history->SetLabel(_L("Print history: response could not be parsed."));
+            }
+        });
+    });
+}
+
+void QidiAdminDialog::refresh_diagnostics()
+{
+    if (m_diagnostics_request)
+        return;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_diagnostics_request = QidiAdminGateway::fetch_diagnostics(connection(), [weak_this](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_diagnostics_request.reset();
+            if (!result.ok)
+                return;
+            try {
+                const auto report = nlohmann::json::parse(result.body);
+                const bool ready = report.value("ok", false);
+                const int latency = report.value("latencyMs", -1);
+                const auto camera_it = report.find("camera");
+                const bool camera_ok = camera_it != report.end() && camera_it->value("snapshot", nlohmann::json::object()).value("ok", false);
+                const auto moonraker_it = report.find("moonraker");
+                const bool moonraker_ok = moonraker_it != report.end() && moonraker_it->value("reachable", false);
+                weak_this->m_diagnostics->SetLabel(wxString::Format(
+                    _L("Raspberry health: %s · Moonraker %s · camera %s · %d ms"),
+                    ready ? _L("ready") : _L("attention"),
+                    moonraker_ok ? _L("online") : _L("offline"),
+                    camera_ok ? _L("online") : _L("unavailable"), latency));
+            } catch (const std::exception&) {
+                weak_this->m_diagnostics->SetLabel(_L("Raspberry health: response could not be parsed."));
             }
         });
     });

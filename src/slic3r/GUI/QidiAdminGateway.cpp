@@ -96,6 +96,16 @@ Http::Ptr QidiAdminGateway::fetch_maintenance_tasks(const QidiAdminConnection& c
     return request(connection, "/api/v1/maintenance/tasks?printer_id=q2", nullptr, std::move(callback));
 }
 
+Http::Ptr QidiAdminGateway::fetch_print_history(const QidiAdminConnection& connection, ResultCallback callback)
+{
+    return request(connection, "/api/v1/history", nullptr, std::move(callback));
+}
+
+Http::Ptr QidiAdminGateway::fetch_diagnostics(const QidiAdminConnection& connection, ResultCallback callback)
+{
+    return request(connection, "/api/v1/diagnostics", nullptr, std::move(callback));
+}
+
 Http::Ptr QidiAdminGateway::fetch_command_queue(const QidiAdminConnection& connection, ResultCallback callback)
 {
     return request(connection, "/api/v1/command-queue?limit=12", nullptr, std::move(callback));

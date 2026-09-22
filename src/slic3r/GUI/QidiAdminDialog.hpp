@@ -44,6 +44,8 @@ private:
     void                refresh_materials();
     void                refresh_macros();
     void                refresh_maintenance();
+    void                refresh_print_history();
+    void                refresh_diagnostics();
     void                refresh_command_queue();
     void                cancel_selected_command();
     void                retry_selected_command();
@@ -60,6 +62,8 @@ private:
     wxStaticText*       m_status {nullptr};
     wxStaticText*       m_material {nullptr};
     wxStaticText*       m_maintenance {nullptr};
+    wxStaticText*       m_history {nullptr};
+    wxStaticText*       m_diagnostics {nullptr};
     wxListBox*          m_queue {nullptr};
     wxChoice*           m_macro_choice {nullptr};
     wxStaticBitmap*     m_camera {nullptr};
@@ -72,6 +76,8 @@ private:
     Http::Ptr           m_material_request;
     Http::Ptr           m_macro_request;
     Http::Ptr           m_maintenance_request;
+    Http::Ptr           m_history_request;
+    Http::Ptr           m_diagnostics_request;
     Http::Ptr           m_queue_request;
     Http::Ptr           m_queue_cancel_request;
     Http::Ptr           m_queue_retry_request;

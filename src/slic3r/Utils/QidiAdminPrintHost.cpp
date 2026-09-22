@@ -8,7 +8,9 @@
 #include <boost/property_tree/ptree.hpp>
 
 #include "libslic3r/PrintConfig.hpp"
+#include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/I18N.hpp"
+#include "slic3r/GUI/QidiAdminCredentials.hpp"
 #include "slic3r/GUI/format.hpp"
 
 namespace pt = boost::property_tree;
@@ -20,7 +22,16 @@ QidiAdminPrintHost::QidiAdminPrintHost(DynamicPrintConfig* config)
     , m_api_key(config->opt_string("printhost_apikey"))
     , m_ca_file(config->opt_string("printhost_cafile"))
     , m_ssl_revoke_best_effort(config->opt_bool("printhost_ssl_ignore_revoke"))
-{}
+{
+    // The physical-printer profile may deliberately omit credentials because
+    // presets are shareable.  The Admin dialog owns the global server address
+    // and keeps the API key in Windows Credential Manager, so use it only as
+    // a fallback. Per-printer values always take precedence.
+    if (m_host.empty())
+        m_host = GUI::wxGetApp().app_config->get("qidi_admin", "endpoint");
+    if (m_api_key.empty())
+        m_api_key = GUI::QidiAdminCredentials::load_api_key();
+}
 
 const char* QidiAdminPrintHost::get_name() const { return "Qidi Admin Server"; }
 
