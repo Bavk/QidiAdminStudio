@@ -4,6 +4,7 @@
 
 #include <wx/button.h>
 #include <wx/checkbox.h>
+#include <wx/choice.h>
 #include <wx/mstream.h>
 #include <wx/sizer.h>
 #include <wx/statbmp.h>
@@ -18,6 +19,20 @@
 #include "libslic3r/AppConfig.hpp"
 
 namespace Slic3r::GUI {
+namespace {
+
+wxString wx_from_utf8(const std::string& value)
+{
+    return wxString::FromUTF8(value.c_str());
+}
+
+std::string utf8_from_wx(const wxString& value)
+{
+    const wxCharBuffer utf8 = value.ToUTF8();
+    return utf8.data() == nullptr ? std::string() : std::string(utf8.data());
+}
+
+} // namespace
 
 QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     : DPIDialog(parent, wxID_ANY, _L("Qidi Admin Server"), wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
@@ -29,11 +44,11 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     auto* form = new wxFlexGridSizer(2, FromDIP(10), FromDIP(10));
     form->AddGrowableCol(1, 1);
     form->Add(new wxStaticText(this, wxID_ANY, _L("Server URL")), 0, wxALIGN_CENTER_VERTICAL);
-    m_endpoint = new wxTextCtrl(this, wxID_ANY, from_u8(wxGetApp().app_config->get("qidi_admin", "endpoint")));
+    m_endpoint = new wxTextCtrl(this, wxID_ANY, wx_from_utf8(wxGetApp().app_config->get("qidi_admin", "endpoint")));
     m_endpoint->SetHint("https://morrax3d.ru");
     form->Add(m_endpoint, 1, wxEXPAND);
     form->Add(new wxStaticText(this, wxID_ANY, _L("API key")), 0, wxALIGN_CENTER_VERTICAL);
-    m_api_key = new wxTextCtrl(this, wxID_ANY, from_u8(QidiAdminCredentials::load_api_key()), wxDefaultPosition, wxDefaultSize, wxTE_PASSWORD);
+    m_api_key = new wxTextCtrl(this, wxID_ANY, wx_from_utf8(QidiAdminCredentials::load_api_key()), wxDefaultPosition, wxDefaultSize, wxTE_PASSWORD);
     m_api_key->SetHint(_L("Stored in Windows Credential Manager"));
     form->Add(m_api_key, 1, wxEXPAND);
     layout->Add(form, 1, wxLEFT | wxRIGHT | wxEXPAND, FromDIP(16));
@@ -46,6 +61,16 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     layout->Add(m_status, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     m_material = new wxStaticText(this, wxID_ANY, _L("Material: loading from Raspberry…"));
     layout->Add(m_material, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
+
+    auto* macro_row = new wxBoxSizer(wxHORIZONTAL);
+    m_macro_choice = new wxChoice(this, wxID_ANY);
+    m_macro_choice->SetMinSize(FromDIP(wxSize(330, -1)));
+    m_macro_choice->Append(_L("Loading server macros…"));
+    m_macro_choice->SetSelection(0);
+    auto* run_macro_button = new wxButton(this, wxID_ANY, _L("Run macro"));
+    macro_row->Add(m_macro_choice, 1, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
+    macro_row->Add(run_macro_button, 0);
+    layout->Add(macro_row, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(16));
 
     m_camera = new wxStaticBitmap(this, wxID_ANY, wxNullBitmap, wxDefaultPosition, FromDIP(wxSize(480, 270)));
     m_camera->SetMinSize(FromDIP(wxSize(480, 270)));
@@ -87,7 +112,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
             send_command("M112", 100, _L("Emergency stop"));
     });
     send_command_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
-        const std::string script = into_u8(m_command->GetValue());
+        const std::string script = utf8_from_wx(m_command->GetValue());
         if (script.empty()) {
             m_status->SetLabel(_L("Enter G-code before queueing it."));
             return;
@@ -95,6 +120,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
         send_command(script, 50, _L("G-code"));
         m_command->Clear();
     });
+    run_macro_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { run_selected_macro(); });
     Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { save_connection(); EndModal(wxID_OK); }, wxID_OK);
     Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
         // Do not continuously create failing requests while the connection
@@ -108,6 +134,8 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
             refresh_status();
         if (m_refresh_ticks % 12 == 0)
             refresh_materials();
+        if (m_refresh_ticks % 20 == 0)
+            refresh_macros();
     }, m_camera_timer.GetId());
     m_camera_timer.Start(500);
     wxGetApp().UpdateDlgDarkUI(this);
@@ -122,8 +150,68 @@ QidiAdminDialog::~QidiAdminDialog()
         m_status_request->cancel();
     if (m_material_request)
         m_material_request->cancel();
+    if (m_macro_request)
+        m_macro_request->cancel();
     if (m_camera_request)
         m_camera_request->cancel();
+}
+
+void QidiAdminDialog::refresh_macros()
+{
+    if (m_macro_request)
+        return;
+    wxWeakRef<QidiAdminDialog> weak_this(this);
+    m_macro_request = QidiAdminGateway::fetch_macros(connection(), [weak_this](QidiAdminResult result) {
+        wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+            if (!weak_this)
+                return;
+            weak_this->m_macro_request.reset();
+            if (!result.ok)
+                return;
+            try {
+                const auto payload = nlohmann::json::parse(result.body);
+                if (!payload.is_array())
+                    return;
+                weak_this->m_macros.clear();
+                weak_this->m_macro_choice->Clear();
+                for (const auto& item : payload) {
+                    ServerMacro macro;
+                    macro.name = wx_from_utf8(item.value("name", "Unnamed macro"));
+                    macro.description = wx_from_utf8(item.value("description", ""));
+                    macro.script = item.value("script", "");
+                    macro.requires_confirmation = item.value("requires_confirmation", true);
+                    if (!macro.script.empty())
+                        weak_this->m_macros.emplace_back(std::move(macro));
+                }
+                if (weak_this->m_macros.empty()) {
+                    weak_this->m_macro_choice->Append(_L("No server macros"));
+                    weak_this->m_macro_choice->SetSelection(0);
+                    return;
+                }
+                for (const auto& macro : weak_this->m_macros)
+                    weak_this->m_macro_choice->Append(macro.description.empty() ? macro.name : macro.name + " — " + macro.description);
+                weak_this->m_macro_choice->SetSelection(0);
+            } catch (const std::exception&) {
+                weak_this->m_macro_choice->Clear();
+                weak_this->m_macro_choice->Append(_L("Server macros unavailable"));
+                weak_this->m_macro_choice->SetSelection(0);
+            }
+        });
+    });
+}
+
+void QidiAdminDialog::run_selected_macro()
+{
+    const int selection = m_macro_choice ? m_macro_choice->GetSelection() : wxNOT_FOUND;
+    if (selection == wxNOT_FOUND || static_cast<size_t>(selection) >= m_macros.size()) {
+        m_status->SetLabel(_L("Choose a server macro first."));
+        return;
+    }
+    const ServerMacro& macro = m_macros[selection];
+    if (macro.requires_confirmation &&
+        wxMessageBox(wxString::Format(_L("Run macro '%s'?"), macro.name), _L("Confirm macro"), wxYES_NO | wxICON_WARNING, this) != wxYES)
+        return;
+    send_command(macro.script, 60, macro.name);
 }
 
 void QidiAdminDialog::refresh_materials()
@@ -148,8 +236,8 @@ void QidiAdminDialog::refresh_materials()
                     return spool.value("active", false);
                 });
                 const auto& spool = active == spools.end() ? spools.front() : *active;
-                const wxString name = from_u8(spool.value("name", "Unknown spool"));
-                const wxString type = from_u8(spool.value("material_type", ""));
+                const wxString name = wx_from_utf8(spool.value("name", "Unknown spool"));
+                const wxString type = wx_from_utf8(spool.value("material_type", ""));
                 const double weight = spool.value("remaining_weight_g", 0.0);
                 weak_this->m_material->SetLabel(wxString::Format(_L("Material: %s · %s · %.0f g remaining"), name, type, weight));
             } catch (const std::exception&) {
@@ -161,7 +249,7 @@ void QidiAdminDialog::refresh_materials()
 
 QidiAdminConnection QidiAdminDialog::connection() const
 {
-    return {into_u8(m_endpoint->GetValue()), into_u8(m_api_key->GetValue()), m_verify_tls->GetValue()};
+    return {utf8_from_wx(m_endpoint->GetValue()), utf8_from_wx(m_api_key->GetValue()), m_verify_tls->GetValue()};
 }
 
 void QidiAdminDialog::save_connection()
@@ -258,7 +346,7 @@ void QidiAdminDialog::show_result(const QidiAdminResult& result)
             const auto& display = printer.at("display_status");
             const auto& extruder = printer.at("extruder");
             const auto& bed = printer.at("heater_bed");
-            const wxString state = from_u8(print_stats.value("state", "unknown"));
+            const wxString state = wx_from_utf8(print_stats.value("state", "unknown"));
             const double progress = display.value("progress", 0.0) * 100.0;
             const double nozzle = extruder.value("temperature", 0.0);
             const double nozzle_target = extruder.value("target", 0.0);
@@ -271,7 +359,7 @@ void QidiAdminDialog::show_result(const QidiAdminResult& result)
         }
         return;
     }
-    const wxString detail = from_u8(result.error.empty() ? result.body : result.error);
+    const wxString detail = wx_from_utf8(result.error.empty() ? result.body : result.error);
     m_status->SetLabel(wxString::Format(_L("Connection failed%s"), detail.empty() ? "." : ": " + detail));
 }
 

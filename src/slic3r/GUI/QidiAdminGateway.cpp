@@ -86,6 +86,11 @@ Http::Ptr QidiAdminGateway::fetch_materials(const QidiAdminConnection& connectio
     return request(connection, "/api/v1/materials/spools?printer_id=q2", nullptr, std::move(callback));
 }
 
+Http::Ptr QidiAdminGateway::fetch_macros(const QidiAdminConnection& connection, ResultCallback callback)
+{
+    return request(connection, "/api/v1/macros?printer_id=q2", nullptr, std::move(callback));
+}
+
 Http::Ptr QidiAdminGateway::preflight(const QidiAdminConnection& connection,
                                       const std::string& filename,
                                       const std::string& printer_id,
