@@ -34,6 +34,15 @@ std::string utf8_from_wx(const wxString& value)
     return utf8.data() == nullptr ? std::string() : std::string(utf8.data());
 }
 
+wxString format_duration(double seconds)
+{
+    const long long total = std::max(0LL, static_cast<long long>(seconds));
+    const long long hours = total / 3600;
+    const long long minutes = (total % 3600) / 60;
+    return hours > 0 ? wxString::Format("%lld h %02lld min", hours, minutes)
+                     : wxString::Format("%lld min", minutes);
+}
+
 } // namespace
 
 QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
@@ -793,12 +802,21 @@ void QidiAdminDialog::show_result(const QidiAdminResult& result)
             const auto& bed = printer.at("heater_bed");
             const wxString state = wx_from_utf8(print_stats.value("state", "unknown"));
             const double progress = display.value("progress", 0.0) * 100.0;
+            const double elapsed = print_stats.value("print_duration", 0.0);
+            const double remaining = progress > 0.5 && elapsed > 0.0
+                ? std::max(0.0, elapsed * (100.0 - progress) / progress)
+                : -1.0;
             const double nozzle = extruder.value("temperature", 0.0);
             const double nozzle_target = extruder.value("target", 0.0);
             const double bed_temp = bed.value("temperature", 0.0);
             const double bed_target = bed.value("target", 0.0);
-            m_status->SetLabel(wxString::Format(_L("%s · %.0f%% · Nozzle %.0f/%.0f°C · Bed %.0f/%.0f°C"),
-                state, progress, nozzle, nozzle_target, bed_temp, bed_target));
+            const wxString duration = elapsed > 0.0
+                ? (remaining >= 0.0
+                    ? wxString::Format(_L(" · %s elapsed · ~%s left"), format_duration(elapsed), format_duration(remaining))
+                    : wxString::Format(_L(" · %s elapsed"), format_duration(elapsed)))
+                : wxEmptyString;
+            m_status->SetLabel(wxString::Format(_L("%s · %.0f%%%s · Nozzle %.0f/%.0f°C · Bed %.0f/%.0f°C"),
+                state, progress, duration, nozzle, nozzle_target, bed_temp, bed_target));
         } catch (const std::exception&) {
             m_status->SetLabel(wxString::Format(_L("Connected — HTTP %u."), result.status));
         }
