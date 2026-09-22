@@ -98,6 +98,13 @@ Http::Ptr QidiAdminGateway::fetch_camera_stream_frame(const QidiAdminConnection&
         request.header("X-Api-Key", connection.api_key);
     request.header("Accept", "multipart/x-mixed-replace, image/jpeg")
         .on_progress([state, callback_holder](Http::Progress progress, bool& cancel) {
+            // libcurl may emit another progress callback while it is applying
+            // cancellation. Delivering the same JPEG twice makes the UI FPS
+            // counter jump and can schedule redundant rescaling work.
+            if (state->delivered) {
+                cancel = true;
+                return;
+            }
             const std::string& buffer = progress.buffer;
             const size_t jpeg_start = buffer.rfind("\xFF\xD8");
             if (jpeg_start == std::string::npos)
