@@ -534,7 +534,7 @@ void QidiAdminDialog::refresh_access_role()
                 const auto payload = nlohmann::json::parse(result.body);
                 const wxString role = wx_from_utf8(payload.value("role", "unknown"));
                 weak_this->m_access_role->SetLabel(wxString::Format(_L("Access role: %s"), role));
-                const bool may_control = role == "admin" || role == "operator";
+                const bool may_control = role == _L("admin") || role == _L("operator");
                 if (weak_this->m_pause) weak_this->m_pause->Enable(may_control);
                 if (weak_this->m_resume) weak_this->m_resume->Enable(may_control);
                 if (weak_this->m_stop) weak_this->m_stop->Enable(may_control);
