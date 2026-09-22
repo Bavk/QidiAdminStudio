@@ -972,7 +972,10 @@ void QidiAdminDialog::show_result(const QidiAdminResult& result)
                 ? (remaining >= 0.0
                     ? wxString::Format(_L(" · %s elapsed · ~%s left"), format_duration(elapsed), format_duration(remaining))
                     : wxString::Format(_L(" · %s elapsed"), format_duration(elapsed)))
-                : wxEmptyString;
+                // clang-cl sees wxEmptyString as convertible in both
+                // directions in this conditional expression. Use a concrete
+                // wxString so MSVC and clang-cl agree on the value type.
+                : wxString();
             m_status->SetLabel(wxString::Format(_L("%s · %.0f%%%s · Nozzle %.0f/%.0f°C · Bed %.0f/%.0f°C"),
                 state, progress, duration, nozzle, nozzle_target, bed_temp, bed_target));
         } catch (const std::exception&) {
