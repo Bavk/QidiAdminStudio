@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <fstream>
 #include <stdexcept>
+#include <utility>
 
 #include <wx/button.h>
 #include <wx/checkbox.h>
@@ -50,6 +51,219 @@ wxString format_duration(double seconds)
     return hours > 0 ? wxString::Format("%lld h %02lld min", hours, minutes)
                      : wxString::Format("%lld min", minutes);
 }
+
+class MaterialChangeWizardDialog final : public wxDialog {
+public:
+    MaterialChangeWizardDialog(wxWindow* parent, QidiAdminConnection connection,
+                               const std::vector<std::string>& spool_rows, std::function<void()> on_updated)
+        : wxDialog(parent, wxID_ANY, _L("Change QIDI Q2 material"), wxDefaultPosition,
+                   wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
+        , m_connection(std::move(connection)), m_on_updated(std::move(on_updated))
+    {
+        auto* layout = new wxBoxSizer(wxVERTICAL);
+        layout->Add(new wxStaticText(this, wxID_ANY, _L("Select the new spool. Commands are queued on Raspberry one step at a time.")),
+            0, wxALL, FromDIP(14));
+        m_choice = new wxChoice(this, wxID_ANY);
+        for (const std::string& row : spool_rows) {
+            const auto spool = nlohmann::json::parse(row, nullptr, false);
+            if (!spool.is_object() || !spool.contains("id") || !spool["id"].is_string())
+                continue;
+            m_spools.push_back(spool);
+            m_choice->Append(wxString::Format("%s · %s · %.0f g",
+                wx_from_utf8(spool.value("name", "Spool")),
+                wx_from_utf8(spool.value("material_type", "")),
+                spool.value("remaining_weight_g", 0.0)));
+        }
+        if (!m_spools.empty())
+            m_choice->SetSelection(0);
+        layout->Add(m_choice, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(14));
+        m_instruction = new wxStaticText(this, wxID_ANY, wxEmptyString);
+        m_instruction->Wrap(FromDIP(460));
+        layout->Add(m_instruction, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(14));
+        m_status = new wxStaticText(this, wxID_ANY, wxEmptyString);
+        m_status->Wrap(FromDIP(460));
+        layout->Add(m_status, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, FromDIP(14));
+        auto* buttons = new wxBoxSizer(wxHORIZONTAL);
+        m_next = new wxButton(this, wxID_ANY, wxEmptyString);
+        auto* cancel = new wxButton(this, wxID_CANCEL, _L("Cancel"));
+        buttons->Add(m_next, 0, wxRIGHT, FromDIP(8));
+        buttons->Add(cancel, 0);
+        layout->Add(buttons, 0, wxALL | wxALIGN_RIGHT, FromDIP(14));
+        SetSizerAndFit(layout);
+        SetMinSize(FromDIP(wxSize(500, 280)));
+        update_step();
+        m_next->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { advance(); });
+        m_choice->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) { update_step(); });
+        wxGetApp().UpdateDarkUIWin(this);
+    }
+
+    ~MaterialChangeWizardDialog() override
+    {
+        if (m_request)
+            m_request->cancel();
+    }
+
+private:
+    int target_temperature() const
+    {
+        const int selection = m_choice->GetSelection();
+        if (selection == wxNOT_FOUND || static_cast<size_t>(selection) >= m_spools.size())
+            return 0;
+        const std::string material = m_spools[selection].value("material_type", "");
+        if (material == "ABS" || material == "ASA") return 255;
+        if (material == "PETG") return 240;
+        if (material == "TPU") return 225;
+        if (material == "PA-CF") return 285;
+        return 215;
+    }
+
+    void update_step()
+    {
+        if (m_spools.empty()) {
+            m_instruction->SetLabel(_L("Add a spool in Materials before starting this wizard."));
+            m_next->Disable();
+            return;
+        }
+        m_choice->Enable(m_step == 0);
+        switch (m_step) {
+        case 0:
+            m_instruction->SetLabel(wxString::Format(_L("Step 1/4: Heat the nozzle to %d °C. Do not touch the hotend."), target_temperature()));
+            m_next->SetLabel(_L("Queue heating"));
+            break;
+        case 1:
+            m_instruction->SetLabel(_L("Step 2/4: Wait for the nozzle to reach temperature. The wizard checks its actual temperature before unloading."));
+            m_next->SetLabel(_L("Check temperature and unload"));
+            break;
+        case 2:
+            m_instruction->SetLabel(_L("Step 3/4: Wait until the old filament is fully removed, then insert the new filament."));
+            m_next->SetLabel(_L("Queue loading"));
+            break;
+        default:
+            m_instruction->SetLabel(_L("Step 4/4: Wait for loading to finish. Confirm that the new color flows smoothly before activating this spool."));
+            m_next->SetLabel(_L("Confirm flow and activate spool"));
+            break;
+        }
+        m_next->Enable();
+        Layout();
+    }
+
+    void queue_step(const std::string& script, int next_step, const wxString& success_text)
+    {
+        m_next->Disable();
+        m_status->SetLabel(_L("Sending command to Raspberry…"));
+        wxWeakRef<MaterialChangeWizardDialog> weak_this(this);
+        m_request = QidiAdminGateway::enqueue_command(m_connection, script, 50, "Material change",
+            [weak_this, next_step, success_text](QidiAdminResult result) {
+                wxTheApp->CallAfter([weak_this, next_step, success_text, result = std::move(result)]() {
+                    if (!weak_this)
+                        return;
+                    weak_this->m_request.reset();
+                    if (!result.ok) {
+                        weak_this->m_status->SetLabel(wxString::Format(_L("Command was not accepted: HTTP %u"), result.status));
+                        weak_this->m_next->Enable();
+                        return;
+                    }
+                    weak_this->m_step = next_step;
+                    weak_this->m_status->SetLabel(success_text);
+                    weak_this->update_step();
+                });
+            });
+    }
+
+    void advance()
+    {
+        if (m_request || m_spools.empty())
+            return;
+        if (m_step == 0) {
+            queue_step("M104 S" + std::to_string(target_temperature()), 1,
+                _L("Heating queued. Wait for the actual nozzle temperature before continuing."));
+            return;
+        }
+        if (m_step == 1) {
+            m_next->Disable();
+            m_status->SetLabel(_L("Checking Q2 nozzle temperature…"));
+            wxWeakRef<MaterialChangeWizardDialog> weak_this(this);
+            m_request = QidiAdminGateway::fetch_status(m_connection, [weak_this](QidiAdminResult result) {
+                wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+                    if (!weak_this)
+                        return;
+                    weak_this->m_request.reset();
+                    if (!result.ok) {
+                        weak_this->m_status->SetLabel(_L("Cannot verify nozzle temperature. Check the connection."));
+                        weak_this->m_next->Enable();
+                        return;
+                    }
+                    try {
+                        const auto payload = nlohmann::json::parse(result.body);
+                        const double actual = payload.at("printer").at("result").at("status")
+                            .at("extruder").value("temperature", 0.0);
+                        if (actual < weak_this->target_temperature() - 10) {
+                            weak_this->m_status->SetLabel(wxString::Format(_L("Nozzle is %.0f °C; wait for %d °C before unloading."),
+                                actual, weak_this->target_temperature()));
+                            weak_this->m_next->Enable();
+                            return;
+                        }
+                        weak_this->queue_step("UNLOAD_FILAMENT", 2,
+                            _L("Unload queued. Wait until the old filament has been removed."));
+                    } catch (const std::exception&) {
+                        weak_this->m_status->SetLabel(_L("Nozzle temperature was not present in the server response."));
+                        weak_this->m_next->Enable();
+                    }
+                });
+            });
+            return;
+        }
+        if (m_step == 2) {
+            queue_step("LOAD_FILAMENT", 3,
+                _L("Load queued. Wait for extrusion and inspect the new filament before activating the spool."));
+            return;
+        }
+        const int selection = m_choice->GetSelection();
+        if (selection == wxNOT_FOUND || static_cast<size_t>(selection) >= m_spools.size())
+            return;
+        auto spool = m_spools[selection];
+        nlohmann::json metadata = nlohmann::json::parse(spool.value("metadata_json", "{}"), nullptr, false);
+        if (!metadata.is_object())
+            metadata = nlohmann::json::object();
+        const nlohmann::json payload = {
+            {"id", spool.value("id", "")}, {"printer_id", spool.value("printer_id", "q2")},
+            {"slot", spool.value("slot", "")}, {"name", spool.value("name", "")},
+            {"material_type", spool.value("material_type", "")},
+            {"color_value", spool.value("color_value", 0)},
+            {"initial_weight_g", spool.value("initial_weight_g", 0.0)},
+            {"remaining_weight_g", spool.value("remaining_weight_g", 0.0)},
+            {"price", spool.value("price", 0.0)}, {"active", true}, {"metadata", metadata}
+        };
+        m_next->Disable();
+        m_status->SetLabel(_L("Activating spool on Raspberry…"));
+        wxWeakRef<MaterialChangeWizardDialog> weak_this(this);
+        m_request = QidiAdminGateway::upsert_spool(m_connection, spool.value("id", ""), payload.dump(),
+            [weak_this](QidiAdminResult result) {
+                wxTheApp->CallAfter([weak_this, result = std::move(result)]() {
+                    if (!weak_this)
+                        return;
+                    weak_this->m_request.reset();
+                    if (!result.ok) {
+                        weak_this->m_status->SetLabel(wxString::Format(_L("Could not activate spool: HTTP %u"), result.status));
+                        weak_this->m_next->Enable();
+                        return;
+                    }
+                    weak_this->m_on_updated();
+                    weak_this->EndModal(wxID_OK);
+                });
+            });
+    }
+
+    QidiAdminConnection m_connection;
+    std::function<void()> m_on_updated;
+    std::vector<nlohmann::json> m_spools;
+    wxChoice* m_choice {nullptr};
+    wxStaticText* m_instruction {nullptr};
+    wxStaticText* m_status {nullptr};
+    wxButton* m_next {nullptr};
+    Http::Ptr m_request;
+    int m_step {0};
+};
 
 } // namespace
 
@@ -116,10 +330,13 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     auto* spool_actions = new wxBoxSizer(wxHORIZONTAL);
     m_add_spool = new wxButton(content, wxID_ANY, _L("Add spool…"));
     m_edit_spool = new wxButton(content, wxID_ANY, _L("Edit selected…"));
+    m_change_material = new wxButton(content, wxID_ANY, _L("Change material…"));
     m_add_spool->Disable();
     m_edit_spool->Disable();
+    m_change_material->Disable();
     spool_actions->Add(m_add_spool, 0, wxRIGHT, FromDIP(8));
-    spool_actions->Add(m_edit_spool, 0);
+    spool_actions->Add(m_edit_spool, 0, wxRIGHT, FromDIP(8));
+    spool_actions->Add(m_change_material, 0);
     layout->Add(spool_actions, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(16));
     start_page(_L("Maintenance and reports"));
     m_maintenance = new wxStaticText(content, wxID_ANY, _L("Maintenance: loading from Raspberry…"));
@@ -410,6 +627,7 @@ QidiAdminDialog::QidiAdminDialog(wxWindow* parent)
     m_edit_maintenance->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { edit_maintenance_task(false); });
     m_add_spool->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { edit_spool(true); });
     m_edit_spool->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { edit_spool(false); });
+    m_change_material->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { change_material(); });
     m_simulate_command->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { simulate_command(); });
     m_save_camera_snapshot->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { save_camera_snapshot(); });
     m_command_log->Bind(wxEVT_LISTBOX, [this](wxCommandEvent&) {
@@ -1383,6 +1601,7 @@ void QidiAdminDialog::invalidate_access_role()
     m_edit_macro->Disable();
     m_add_spool->Disable();
     m_edit_spool->Disable();
+    m_change_material->Disable();
     m_add_maintenance->Disable();
     m_edit_maintenance->Disable();
     m_send_command->Disable();
@@ -1429,6 +1648,7 @@ void QidiAdminDialog::refresh_access_role()
                 if (weak_this->m_edit_macro) weak_this->m_edit_macro->Enable(weak_this->m_may_manage_spools && !weak_this->m_macros.empty());
                 if (weak_this->m_add_spool) weak_this->m_add_spool->Enable(weak_this->m_may_manage_spools);
                 if (weak_this->m_edit_spool) weak_this->m_edit_spool->Enable(weak_this->m_may_manage_spools && !weak_this->m_spool_rows.empty());
+                if (weak_this->m_change_material) weak_this->m_change_material->Enable(weak_this->m_may_manage_spools && !weak_this->m_spool_rows.empty());
                 if (weak_this->m_add_maintenance) weak_this->m_add_maintenance->Enable(weak_this->m_may_manage_spools);
                 if (weak_this->m_edit_maintenance) weak_this->m_edit_maintenance->Enable(weak_this->m_may_manage_spools && !weak_this->m_maintenance_rows.empty());
                 if (weak_this->m_create_klipper_backup) weak_this->m_create_klipper_backup->Enable(weak_this->m_may_manage_spools);
@@ -1622,6 +1842,7 @@ void QidiAdminDialog::refresh_materials()
                     static_cast<size_t>(previous_selection) < weak_this->m_spool_rows.size())
                     weak_this->m_spool_list->SetSelection(previous_selection);
                 weak_this->m_edit_spool->Enable(weak_this->m_may_manage_spools && !weak_this->m_spool_rows.empty());
+                weak_this->m_change_material->Enable(weak_this->m_may_manage_spools && !weak_this->m_spool_rows.empty());
                 if (spools.empty()) {
                     weak_this->m_material->SetLabel(_L("Material: no active spool configured."));
                     return;
@@ -1639,6 +1860,21 @@ void QidiAdminDialog::refresh_materials()
             }
         });
     });
+}
+
+void QidiAdminDialog::change_material()
+{
+    if (!m_may_manage_spools || m_spool_rows.empty())
+        return;
+    const wxString state = m_printer_state.Lower();
+    if (state != "standby" && state != "complete" && state != "cancelled") {
+        wxMessageBox(_L("Wait until Q2 is idle before changing material."),
+            _L("Printer is not idle"), wxOK | wxICON_WARNING, this);
+        return;
+    }
+    MaterialChangeWizardDialog wizard(this, connection(), m_spool_rows,
+        [this]() { refresh_materials(); });
+    wizard.ShowModal();
 }
 
 void QidiAdminDialog::edit_spool(bool create_new)

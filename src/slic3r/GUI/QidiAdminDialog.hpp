@@ -53,6 +53,7 @@ private:
     void                refresh_status(bool announce = false);
     void                refresh_materials();
     void                edit_spool(bool create_new);
+    void                change_material();
     void                refresh_macros();
     void                edit_macro(bool create_new);
     void                refresh_maintenance();
@@ -92,6 +93,7 @@ private:
     wxListBox*          m_spool_list {nullptr};
     wxButton*           m_add_spool {nullptr};
     wxButton*           m_edit_spool {nullptr};
+    wxButton*           m_change_material {nullptr};
     wxStaticText*       m_maintenance {nullptr};
     wxListBox*          m_maintenance_list {nullptr};
     wxButton*           m_add_maintenance {nullptr};
